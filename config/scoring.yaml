@@ -1,0 +1,11 @@
+# 하이라이트 세그먼트 점수화 가중치 (docs/04-pipeline-spec.md §4.3.1)
+# score(seg) = Σ(weights · signal) − Σ(penalties · penaltySignal)
+weights:
+  speechDensity: 0.30 # 발화 시간 비율
+  audioEnergy: 0.20 # 정규화 RMS
+  motion: 0.20 # 모션 크기 (0~1 클램프)
+  facePresence: 0.15 # 얼굴 등장 비율
+  quality: 0.15 # 노출/선명도
+penalties:
+  shake: 0.30 # 흔들림
+  dark: 0.20 # 과암

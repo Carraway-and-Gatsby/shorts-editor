@@ -1,0 +1,22 @@
+{
+  "name": "@shorts/worker-ingest",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@shorts/db": "workspace:*",
+    "@shorts/media": "workspace:*",
+    "@shorts/queue": "workspace:*",
+    "@shorts/shared": "workspace:*",
+    "@shorts/storage": "workspace:*",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "name": "silent-motion-shots",
+  "targetDuration": 30,
+  "analysis": {
+    "version": 1,
+    "jobId": "eval_silent",
+    "source": {
+      "duration": 90,
+      "fps": 30,
+      "width": 1920,
+      "height": 1080,
+      "hasAudio": false
+    },
+    "shots": [
+      {
+        "start": 0,
+        "end": 25,
+        "signals": {
+          "motion": 0.85,
+          "shake": 0.1,
+          "quality": 0.9,
+          "facePresence": 0,
+          "darkness": 0.1
+        },
+        "subjectTrack": []
+      },
+      {
+        "start": 25,
+        "end": 60,
+        "signals": {
+          "motion": 0.05,
+          "shake": 0.1,
+          "quality": 0.6,
+          "facePresence": 0,
+          "darkness": 0.1
+        },
+        "subjectTrack": []
+      },
+      {
+        "start": 60,
+        "end": 90,
+        "signals": {
+          "motion": 0.8,
+          "shake": 0.1,
+          "quality": 0.85,
+          "facePresence": 0,
+          "darkness": 0.1
+        },
+        "subjectTrack": []
+      }
+    ],
+    "transcript": null,
+    "silences": [],
+    "energy": [],
+    "warnings": [
+      "stt_skipped_no_audio"
+    ]
+  },
+  "expected": {
+    "mustInclude": [
+      [
+        5,
+        20
+      ]
+    ],
+    "mustExclude": [
+      [
+        30,
+        55
+      ]
+    ]
+  }
+}

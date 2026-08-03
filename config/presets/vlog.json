@@ -1,0 +1,7 @@
+{
+  "id": "vlog",
+  "name": "브이로그",
+  "description": "부드러운 자막과 잔잔한 BGM.",
+  "bgmMood": "calm",
+  "titleCard": false
+}

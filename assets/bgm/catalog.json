@@ -1,0 +1,28 @@
+{
+  "tracks": [
+    {
+      "id": "bgm_calm_01",
+      "name": "Calm Pad",
+      "moods": ["calm", "warm"],
+      "durationSeconds": 24,
+      "file": "bgm_calm_01.m4a",
+      "licenseNote": "CC0 — 본 저장소에서 ffmpeg로 합성한 자체 제작 트랙 (assets/bgm/README.md 참조)"
+    },
+    {
+      "id": "bgm_upbeat_01",
+      "name": "Upbeat Pulse",
+      "moods": ["upbeat", "bright"],
+      "durationSeconds": 24,
+      "file": "bgm_upbeat_01.m4a",
+      "licenseNote": "CC0 — 본 저장소에서 ffmpeg로 합성한 자체 제작 트랙 (assets/bgm/README.md 참조)"
+    },
+    {
+      "id": "bgm_energetic_01",
+      "name": "Energetic Drive",
+      "moods": ["energetic", "promo"],
+      "durationSeconds": 24,
+      "file": "bgm_energetic_01.m4a",
+      "licenseNote": "CC0 — 본 저장소에서 ffmpeg로 합성한 자체 제작 트랙 (assets/bgm/README.md 참조)"
+    }
+  ]
+}

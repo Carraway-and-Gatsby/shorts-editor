@@ -1,0 +1,129 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://shorts-editor.dev/schemas/composition.schema.json",
+  "title": "Composition",
+  "type": "object",
+  "required": ["version", "jobId", "revision", "output", "cuts", "reframe", "subtitles", "audio", "style"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "jobId": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "output": {
+      "type": "object",
+      "required": ["width", "height", "fps", "duration"],
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "fps": { "type": "number", "exclusiveMinimum": 0 },
+        "duration": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "cuts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "sourceStart", "sourceEnd", "transition"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "sourceStart": { "type": "number", "minimum": 0 },
+          "sourceEnd": { "type": "number", "exclusiveMinimum": 0 },
+          "transition": { "enum": ["cut", "crossfade"] }
+        }
+      }
+    },
+    "reframe": {
+      "type": "object",
+      "required": ["mode", "keyframes"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["track", "pad", "none"] },
+        "keyframes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["t", "cx", "cy", "zoom"],
+            "additionalProperties": false,
+            "properties": {
+              "t": { "type": "number", "minimum": 0 },
+              "cx": { "type": "number", "minimum": 0, "maximum": 1 },
+              "cy": { "type": "number", "minimum": 0, "maximum": 1 },
+              "zoom": { "type": "number", "exclusiveMinimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "subtitles": {
+      "type": "object",
+      "required": ["style", "blocks"],
+      "additionalProperties": false,
+      "properties": {
+        "style": { "type": "string", "minLength": 1 },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "start", "end", "text", "words"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "start": { "type": "number", "minimum": 0 },
+              "end": { "type": "number", "exclusiveMinimum": 0 },
+              "text": { "type": "string" },
+              "words": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["start", "end", "text"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "start": { "type": "number", "minimum": 0 },
+                    "end": { "type": "number", "exclusiveMinimum": 0 },
+                    "text": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "required": ["bgm", "loudnessTarget"],
+      "additionalProperties": false,
+      "properties": {
+        "bgm": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["trackId", "gainDb", "duckDb"],
+              "additionalProperties": false,
+              "properties": {
+                "trackId": { "type": "string", "minLength": 1 },
+                "gainDb": { "type": "number" },
+                "duckDb": { "type": "number" }
+              }
+            }
+          ]
+        },
+        "loudnessTarget": { "type": "number" }
+      }
+    },
+    "style": {
+      "type": "object",
+      "required": ["preset", "titleCard", "lut"],
+      "additionalProperties": false,
+      "properties": {
+        "preset": { "type": "string", "minLength": 1 },
+        "titleCard": { "type": ["string", "null"] },
+        "lut": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

@@ -3,9 +3,14 @@ import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { QUEUE_NAMES, type StageJobPayload } from './names.js';
 
+export interface EnqueueOptions {
+  /** 총 시도 횟수 (기본 1 = 재시도 없음) */
+  attempts?: number;
+}
+
 /** 단계 큐 추상화. 테스트/로컬에서는 인메모리 구현으로 대체할 수 있다. */
 export interface StageQueue {
-  enqueue(stage: JobStage, payload: StageJobPayload): Promise<void>;
+  enqueue(stage: JobStage, payload: StageJobPayload, options?: EnqueueOptions): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -30,8 +35,14 @@ export class BullStageQueue implements StageQueue {
     return queue;
   }
 
-  async enqueue(stage: JobStage, payload: StageJobPayload): Promise<void> {
+  async enqueue(
+    stage: JobStage,
+    payload: StageJobPayload,
+    options?: EnqueueOptions,
+  ): Promise<void> {
     await this.queueFor(stage).add(stage, payload, {
+      attempts: options?.attempts ?? 1,
+      backoff: { type: 'exponential', delay: 3000 },
       removeOnComplete: 1000,
       removeOnFail: 5000,
     });

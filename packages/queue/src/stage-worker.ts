@@ -4,12 +4,19 @@ import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { QUEUE_NAMES, type StageJobPayload } from './names.js';
 
+export interface StageJobContext {
+  /** 이번 실행 이전까지의 시도 횟수 (0 = 첫 시도) */
+  attemptsMade: number;
+  /** 설정된 총 시도 횟수 */
+  attemptsTotal: number;
+}
+
 export interface StageWorkerOptions {
   stage: JobStage;
   redisUrl: string;
   /** /healthz 엔드포인트를 노출할 포트 */
   healthPort: number;
-  handler: (payload: StageJobPayload) => Promise<void>;
+  handler: (payload: StageJobPayload, context: StageJobContext) => Promise<void>;
   concurrency?: number;
 }
 
@@ -31,7 +38,11 @@ export function startStageWorker(options: StageWorkerOptions): StageWorkerRuntim
 
   const worker = new Worker(
     QUEUE_NAMES[stage],
-    async (job) => handler(job.data as StageJobPayload),
+    async (job) =>
+      handler(job.data as StageJobPayload, {
+        attemptsMade: job.attemptsMade,
+        attemptsTotal: job.opts.attempts ?? 1,
+      }),
     { connection, concurrency },
   );
   worker.on('failed', (job, err) => {

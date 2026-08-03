@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { ObjectStorage } from './storage.js';
+import type { ByteRange, ObjectStorage } from './storage.js';
 
 const KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 
@@ -43,10 +43,15 @@ export class LocalFsStorage implements ObjectStorage {
     return fs.readFile(this.resolve(key));
   }
 
-  async getStream(key: string): Promise<Readable> {
+  async getStream(key: string, range?: ByteRange): Promise<Readable> {
     const filePath = this.resolve(key);
     await fs.access(filePath);
-    return createReadStream(filePath);
+    return createReadStream(filePath, range ? { start: range.start, end: range.end } : {});
+  }
+
+  async stat(key: string): Promise<{ size: number }> {
+    const info = await fs.stat(this.resolve(key));
+    return { size: info.size };
   }
 
   async exists(key: string): Promise<boolean> {

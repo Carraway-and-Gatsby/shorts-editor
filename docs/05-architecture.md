@@ -94,7 +94,9 @@ shorts-editor/
 ├── packages/
 │   ├── shared/         # 타입, composition 스키마, 상태 상수
 │   ├── storage/        # 오브젝트 스토리지 추상화 (로컬 FS / S3)
-│   └── queue/          # 큐 클라이언트 래퍼, 워커 공통 런타임
+│   ├── queue/          # 큐 클라이언트 래퍼, 워커 공통 런타임
+│   ├── db/             # 마이그레이션, 리포지토리 (PG 구현 + 테스트용 인메모리)
+│   └── media/          # ffprobe/ffmpeg 명령·실행, Ingest/Render 파이프라인 로직
 ├── config/
 │   ├── scoring.yaml    # 하이라이트 가중치
 │   └── presets/        # 스타일 프리셋 정의

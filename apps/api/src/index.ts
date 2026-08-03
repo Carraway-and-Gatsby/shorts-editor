@@ -1,10 +1,15 @@
+import { createPgRepos, createPool, defaultMigrationsDir, migrate } from '@shorts/db';
+import { BullStageQueue } from '@shorts/queue';
+import { LocalFsStorage } from '@shorts/storage';
 import IORedis from 'ioredis';
-import pg from 'pg';
+import { FileTokenSigner } from './lib/signer.js';
 import { buildServer } from './server.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://shorts:shorts@localhost:5432/shorts';
+const STORAGE_ROOT = process.env.STORAGE_ROOT ?? './storage-data';
+const FILE_TOKEN_SECRET = process.env.FILE_TOKEN_SECRET ?? '';
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -16,6 +21,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 async function main(): Promise<void> {
+  let fileTokenSecret = FILE_TOKEN_SECRET;
+  if (!fileTokenSecret) {
+    console.warn('[api] FILE_TOKEN_SECRET not set — using an insecure development secret');
+    fileTokenSecret = 'dev-file-token-secret';
+  }
+
   const redis = new IORedis(REDIS_URL, {
     maxRetriesPerRequest: 1,
     enableOfflineQueue: false,
@@ -24,12 +35,19 @@ async function main(): Promise<void> {
     console.error('[api] redis error:', err.message);
   });
 
-  const pool = new pg.Pool({ connectionString: DATABASE_URL, connectionTimeoutMillis: 2000 });
-  pool.on('error', (err) => {
-    console.error('[api] postgres pool error:', err.message);
-  });
+  const pool = createPool(DATABASE_URL);
+  const applied = await migrate(pool, defaultMigrationsDir());
+  if (applied.length > 0) {
+    console.log('[api] applied migrations:', applied.join(', '));
+  }
 
-  const app = buildServer({
+  const queue = new BullStageQueue(REDIS_URL);
+
+  const app = await buildServer({
+    repos: createPgRepos(pool),
+    storage: new LocalFsStorage(STORAGE_ROOT),
+    queue,
+    signer: new FileTokenSigner(fileTokenSecret),
     checkRedis: () =>
       withTimeout(redis.ping(), 1500)
         .then(() => true)
@@ -43,6 +61,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     app.log.info(`received ${signal}, shutting down`);
     await app.close();
+    await queue.close();
     await redis.quit().catch(() => {});
     await pool.end().catch(() => {});
     process.exit(0);

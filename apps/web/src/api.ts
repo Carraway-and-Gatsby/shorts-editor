@@ -6,6 +6,13 @@ export interface UploadSession {
   expiresAt: string;
 }
 
+export interface JobOptionsInput {
+  targetDuration?: number | 'auto';
+  preset?: string;
+  subtitle?: 'on' | 'off';
+  bgm?: string;
+}
+
 export interface JobProgressEvent {
   status: string;
   progress: number;
@@ -17,6 +24,85 @@ export interface JobFailedError {
   message: string | null;
 }
 
+export interface JobDetail {
+  jobId: string;
+  status: string;
+  progress: number;
+  stage: string | null;
+  createdAt: string;
+  source: { duration: number; width: number; height: number; hasAudio: boolean } | null;
+  options: { preset: string; targetDuration: number | 'auto' };
+  currentRevision: number;
+  result: {
+    revision: number;
+    duration: number | null;
+    thumbnailUrl: string | null;
+    downloadUrl: null;
+  } | null;
+  error: JobFailedError | null;
+}
+
+export interface JobSummary {
+  jobId: string;
+  status: string;
+  progress: number;
+  createdAt: string;
+  preset: string;
+  duration: number | null;
+  thumbnailUrl: string;
+}
+
+export interface Cut {
+  id: string;
+  sourceStart: number;
+  sourceEnd: number;
+  transition: 'cut' | 'crossfade';
+}
+
+export interface SubtitleBlock {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  words: unknown[];
+}
+
+export interface CompositionView {
+  composition: {
+    cuts: Cut[];
+    output: { duration: number };
+    subtitles: { style: string; blocks: SubtitleBlock[] };
+    style: { preset: string };
+  };
+  hasDraft: boolean;
+  analysisSummary: {
+    sourceDuration: number;
+    speech: Array<{ start: number; end: number }>;
+    silences: Array<{ start: number; end: number }>;
+  } | null;
+}
+
+export interface PresetInfo {
+  id: string;
+  name: string;
+  description: string;
+  titleCard: boolean;
+}
+
+export interface BgmTrackInfo {
+  id: string;
+  name: string;
+  moods: string[];
+  durationSeconds: number;
+}
+
+export interface RevisionInfo {
+  revision: number;
+  createdAt: string;
+  duration: number | null;
+  thumbnailUrl: string | null;
+}
+
 async function parseError(res: Response): Promise<string> {
   try {
     const body = (await res.json()) as { error?: { message?: string } };
@@ -26,20 +112,28 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
-export async function createUpload(file: File): Promise<UploadSession> {
-  const res = await fetch('/api/v1/uploads', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      filename: file.name,
-      size: file.size,
-      mimeType: file.type || 'application/octet-stream',
-    }),
-  });
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
   if (!res.ok) {
     throw new Error(await parseError(res));
   }
-  return (await res.json()) as UploadSession;
+  return (await res.json()) as T;
+}
+
+function jsonInit(method: string, body: unknown): RequestInit {
+  return {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  };
+}
+
+export function createUpload(file: File): Promise<UploadSession> {
+  return request('/api/v1/uploads', jsonInit('POST', {
+    filename: file.name,
+    size: file.size,
+    mimeType: file.type || 'application/octet-stream',
+  }));
 }
 
 export async function uploadChunks(
@@ -63,16 +157,54 @@ export async function uploadChunks(
   }
 }
 
-export async function completeUpload(uploadId: string): Promise<{ jobId: string }> {
-  const res = await fetch(`/api/v1/uploads/${uploadId}/complete`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({}),
-  });
-  if (!res.ok) {
-    throw new Error(await parseError(res));
-  }
-  return (await res.json()) as { jobId: string };
+export function completeUpload(
+  uploadId: string,
+  options: JobOptionsInput,
+): Promise<{ jobId: string }> {
+  return request(`/api/v1/uploads/${uploadId}/complete`, jsonInit('POST', { options }));
+}
+
+export function getJob(jobId: string): Promise<JobDetail> {
+  return request(`/api/v1/jobs/${jobId}`);
+}
+
+export function listJobs(): Promise<{ jobs: JobSummary[]; nextCursor: string | null }> {
+  return request('/api/v1/jobs?limit=30');
+}
+
+export function getPresets(): Promise<PresetInfo[]> {
+  return request('/api/v1/presets');
+}
+
+export function getBgmTracks(): Promise<BgmTrackInfo[]> {
+  return request('/api/v1/bgm-tracks');
+}
+
+export function getComposition(jobId: string): Promise<CompositionView> {
+  return request(`/api/v1/jobs/${jobId}/composition`);
+}
+
+export function patchComposition(
+  jobId: string,
+  patch: { cuts?: Cut[]; subtitles?: { blocks: SubtitleBlock[] } },
+): Promise<CompositionView> {
+  return request(`/api/v1/jobs/${jobId}/composition`, jsonInit('PATCH', patch));
+}
+
+export function startRender(jobId: string): Promise<{ revision: number }> {
+  return request(`/api/v1/jobs/${jobId}/render`, jsonInit('POST', {}));
+}
+
+export function getRevisions(jobId: string): Promise<RevisionInfo[]> {
+  return request(`/api/v1/jobs/${jobId}/revisions`);
+}
+
+export async function getDownloadUrl(jobId: string, revision?: number): Promise<string> {
+  const { url } = await request<{ url: string }>(
+    `/api/v1/jobs/${jobId}/download-url`,
+    jsonInit('POST', revision === undefined ? {} : { revision }),
+  );
+  return url;
 }
 
 export function watchJob(
@@ -103,17 +235,4 @@ export function watchJob(
     }
   };
   return () => source.close();
-}
-
-export async function getDownloadUrl(jobId: string): Promise<string> {
-  const res = await fetch(`/api/v1/jobs/${jobId}/download-url`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({}),
-  });
-  if (!res.ok) {
-    throw new Error(await parseError(res));
-  }
-  const { url } = (await res.json()) as { url: string };
-  return url;
 }

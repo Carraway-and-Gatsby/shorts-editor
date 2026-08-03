@@ -1,0 +1,7 @@
+{
+  "id": "clean",
+  "name": "클린",
+  "description": "장식 없는 기본 스타일. 흰 자막, 잔잔한 BGM.",
+  "bgmMood": "calm",
+  "titleCard": false
+}

@@ -2,11 +2,13 @@ import type { Composition, JobStage, JobStatus } from '@shorts/shared';
 import type pg from 'pg';
 import type {
   CreateJobInput,
+  JobListPage,
   JobRow,
   OutputRow,
   Repos,
   SessionRow,
   SourceMeta,
+  SttCorrectionInput,
   UploadRow,
   UploadStatus,
 } from './types.js';
@@ -119,6 +121,26 @@ export function createPgRepos(pool: pg.Pool): Repos {
         const { rows } = await pool.query('SELECT * FROM jobs WHERE id = $1', [id]);
         return rows[0] ? mapJob(rows[0]) : null;
       },
+      async listBySession(sessionId: string, limit: number, cursor?: string): Promise<JobListPage> {
+        const params: unknown[] = [sessionId, limit + 1];
+        let cursorClause = '';
+        if (cursor) {
+          cursorClause =
+            'AND (created_at, id) < (SELECT created_at, id FROM jobs WHERE id = $3)';
+          params.push(cursor);
+        }
+        const { rows } = await pool.query(
+          `SELECT * FROM jobs WHERE session_id = $1 ${cursorClause}
+           ORDER BY created_at DESC, id DESC LIMIT $2`,
+          params,
+        );
+        const jobs = rows.map(mapJob);
+        const hasMore = jobs.length > limit;
+        return {
+          jobs: hasMore ? jobs.slice(0, limit) : jobs,
+          nextCursor: hasMore ? jobs[limit - 1].id : null,
+        };
+      },
       async transition(
         id: string,
         from: JobStatus,
@@ -217,6 +239,57 @@ export function createPgRepos(pool: pg.Pool): Repos {
           [jobId, revision],
         );
         return rows[0] ? mapOutput(rows[0]) : null;
+      },
+      async listOutputs(jobId: string): Promise<OutputRow[]> {
+        const { rows } = await pool.query(
+          'SELECT * FROM outputs WHERE job_id = $1 AND deleted_at IS NULL ORDER BY revision DESC',
+          [jobId],
+        );
+        return rows.map(mapOutput);
+      },
+      async markOutputDeleted(jobId: string, revision: number): Promise<void> {
+        await pool.query(
+          'UPDATE outputs SET deleted_at = now() WHERE job_id = $1 AND revision = $2',
+          [jobId, revision],
+        );
+      },
+      async getDraft(jobId: string): Promise<Composition | null> {
+        const { rows } = await pool.query('SELECT draft_composition FROM jobs WHERE id = $1', [
+          jobId,
+        ]);
+        return rows[0]?.draft_composition ?? null;
+      },
+      async setDraft(jobId: string, composition: Composition): Promise<void> {
+        await pool.query(
+          'UPDATE jobs SET draft_composition = $2, updated_at = now() WHERE id = $1',
+          [jobId, JSON.stringify(composition)],
+        );
+      },
+      async clearDraft(jobId: string): Promise<void> {
+        await pool.query(
+          'UPDATE jobs SET draft_composition = NULL, updated_at = now() WHERE id = $1',
+          [jobId],
+        );
+      },
+      async listExpired(now: Date, limit: number): Promise<JobRow[]> {
+        const { rows } = await pool.query(
+          'SELECT * FROM jobs WHERE expires_at < $1 AND cleaned_at IS NULL LIMIT $2',
+          [now, limit],
+        );
+        return rows.map(mapJob);
+      },
+      async markCleaned(jobId: string): Promise<void> {
+        await pool.query('UPDATE jobs SET cleaned_at = now() WHERE id = $1', [jobId]);
+      },
+    },
+
+    corrections: {
+      async insert(input: SttCorrectionInput): Promise<void> {
+        await pool.query(
+          `INSERT INTO stt_corrections (job_id, block_id, original_text, corrected_text)
+           VALUES ($1, $2, $3, $4)`,
+          [input.jobId, input.blockId, input.originalText, input.correctedText],
+        );
       },
     },
   };

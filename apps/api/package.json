@@ -12,6 +12,7 @@
   "dependencies": {
     "@fastify/cookie": "^11.0.0",
     "@shorts/db": "workspace:*",
+    "@shorts/media": "workspace:*",
     "@shorts/queue": "workspace:*",
     "@shorts/shared": "workspace:*",
     "@shorts/storage": "workspace:*",

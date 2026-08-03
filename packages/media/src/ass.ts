@@ -14,7 +14,7 @@ interface AssStyle {
   bold: number;
 }
 
-/** 프리셋별 자막 스타일 (F-16의 자막 요소) */
+/** 프리셋별 자막 스타일 (F-16의 자막 요소). config/presets/*.json 카탈로그와 id를 맞춘다. */
 const PRESET_STYLES: Record<string, AssStyle> = {
   clean: {
     fontName: 'Noto Sans CJK KR',
@@ -32,7 +32,27 @@ const PRESET_STYLES: Record<string, AssStyle> = {
     outlineColour: '&H00000000',
     bold: 1,
   },
+  vlog: {
+    fontName: 'Noto Sans CJK KR',
+    fontSize: 80,
+    outline: 3,
+    primaryColour: '&H00F5F5F5',
+    outlineColour: '&H00303030',
+    bold: 0,
+  },
+  promo: {
+    fontName: 'Noto Sans CJK KR',
+    fontSize: 92,
+    outline: 6,
+    primaryColour: '&H00FFFFFF',
+    outlineColour: '&H00B36A00', // 진한 파랑 계열 외곽선 (BGR)
+    bold: 1,
+  },
 };
+
+/** 타이틀 카드 표시 구간 (F-16) */
+const TITLE_CARD_START = 0.2;
+const TITLE_CARD_END = 1.7;
 
 /** h:mm:ss.cc 형식 (ASS 시간 표기) */
 export function formatAssTime(seconds: number): string {
@@ -55,9 +75,10 @@ export function escapeAssText(text: string): string {
 
 export function buildAssDocument(
   blocks: SubtitleBlock[],
-  style: StyleSettings | { preset: string },
+  style: StyleSettings | { preset: string; titleCard?: string | null },
 ): string {
   const preset = PRESET_STYLES[style.preset] ?? PRESET_STYLES.clean;
+  const titleCard = 'titleCard' in style ? (style.titleCard ?? null) : null;
   const header = `[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -68,15 +89,21 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,${preset.fontName},${preset.fontSize},${preset.primaryColour},&H000000FF,${preset.outlineColour},&H80000000,${preset.bold},0,0,0,100,100,0,0,1,${preset.outline},0,2,60,60,422,1
+Style: TitleCard,${preset.fontName},116,${preset.primaryColour},&H000000FF,${preset.outlineColour},&H80000000,1,0,0,0,100,100,0,0,1,${preset.outline + 2},0,5,80,80,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
-  const events = blocks
-    .map(
-      (block) =>
-        `Dialogue: 0,${formatAssTime(block.start)},${formatAssTime(block.end)},Default,,0,0,0,,${escapeAssText(block.text)}`,
-    )
-    .join('\n');
-  return header + events + '\n';
+  const events: string[] = [];
+  if (titleCard) {
+    events.push(
+      `Dialogue: 1,${formatAssTime(TITLE_CARD_START)},${formatAssTime(TITLE_CARD_END)},TitleCard,,0,0,0,,${escapeAssText(titleCard)}`,
+    );
+  }
+  for (const block of blocks) {
+    events.push(
+      `Dialogue: 0,${formatAssTime(block.start)},${formatAssTime(block.end)},Default,,0,0,0,,${escapeAssText(block.text)}`,
+    );
+  }
+  return header + events.join('\n') + '\n';
 }

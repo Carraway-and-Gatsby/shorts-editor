@@ -39,6 +39,8 @@ Preset, BgmTrack : 전역 카탈로그 (잡과 N:1 참조)
 | current_revision | int | 최신 컴포지션 리비전 번호 |
 | error_code / error_message | text NULL | 실패 시 |
 | internal_error | jsonb NULL | 디버깅용 상세 (사용자 비노출) |
+| draft_composition | jsonb NULL | 보정 중인 드래프트 (재렌더링 시 새 리비전으로 확정 후 NULL) |
+| cleaned_at | timestamptz NULL | 보관 기한 경과 후 파일 정리 완료 시각 (배치 멱등성) |
 | created_at / updated_at / expires_at | timestamptz | expires_at: 산출물 보관 기한 |
 
 ### `composition_revisions`
@@ -64,6 +66,10 @@ Preset, BgmTrack : 전역 카탈로그 (잡과 N:1 참조)
 ### `presets` / `bgm_tracks` (카탈로그)
 - `presets`: id, name, description, config(jsonb — 자막 스타일/LUT/전환/기본 BGM 무드), enabled.
 - `bgm_tracks`: id, name, mood_tags(text[]), duration, storage_key, license_note, enabled.
+
+> 구현 노트(v1): 카탈로그는 규모가 작아 테이블 대신 **파일 기반**으로 운영한다 —
+> 프리셋은 `config/presets/*.json`, BGM은 `assets/bgm/catalog.json`.
+> 관리 UI가 필요해지는 시점에 위 테이블 스키마로 이전한다.
 
 ### `stt_corrections` (F-22 학습 데이터)
 - job_id, block_id, original_text, corrected_text, created_at.

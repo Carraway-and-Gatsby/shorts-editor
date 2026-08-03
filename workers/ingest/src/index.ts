@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createPgRepos, createPool } from '@shorts/db';
 import {
+  loadBgmCatalog,
+  loadPresetCatalog,
+  presetsById,
   processComposeJob,
   processIngestJob,
   type PipelineDeps,
@@ -15,6 +18,8 @@ const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://shorts:shorts@localhost:5432/shorts';
 const STORAGE_ROOT = process.env.STORAGE_ROOT ?? './storage-data';
 const SCORING_CONFIG_PATH = process.env.SCORING_CONFIG ?? './config/scoring.yaml';
+const PRESETS_DIR = process.env.PRESETS_DIR ?? './config/presets';
+const BGM_CATALOG = process.env.BGM_CATALOG ?? './assets/bgm/catalog.json';
 
 function loadScoringConfig(): ScoringConfig | undefined {
   try {
@@ -33,13 +38,15 @@ function loadScoringConfig(): ScoringConfig | undefined {
 const pool = createPool(DATABASE_URL);
 const queue = new BullStageQueue(REDIS_URL);
 
-const deps: PipelineDeps & { scoring?: ScoringConfig } = {
+const deps: PipelineDeps = {
   repos: createPgRepos(pool),
   storage: new LocalFsStorage(STORAGE_ROOT),
   enqueueAnalyze: (payload) => queue.enqueue('analyze', payload),
   // 렌더 실패는 1회 자동 재시도 (docs/04-pipeline-spec.md §4.4)
   enqueueRender: (payload) => queue.enqueue('render', payload, { attempts: 2 }),
   scoring: loadScoringConfig(),
+  presets: presetsById(loadPresetCatalog(PRESETS_DIR)),
+  bgmCatalog: loadBgmCatalog(BGM_CATALOG),
 };
 
 // 이 프로세스는 ingest와 compose 두 큐를 소비한다 (compose는 경량 데이터 작업)

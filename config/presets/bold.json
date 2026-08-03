@@ -1,0 +1,7 @@
+{
+  "id": "bold",
+  "name": "볼드",
+  "description": "큰 자막과 강조색, 경쾌한 BGM.",
+  "bgmMood": "upbeat",
+  "titleCard": false
+}

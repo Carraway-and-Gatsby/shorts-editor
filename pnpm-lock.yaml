@@ -26,6 +26,9 @@ importers:
       '@shorts/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@shorts/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       '@shorts/queue':
         specifier: workspace:*
         version: link:../../packages/queue

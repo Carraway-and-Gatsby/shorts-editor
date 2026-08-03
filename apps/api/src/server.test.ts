@@ -30,6 +30,20 @@ function createTestDeps(storageRoot: string): AppDeps & { enqueued: EnqueuedJob[
       async close() {},
     },
     signer: new FileTokenSigner('test-secret'),
+    presetCatalog: [
+      { id: 'clean', name: '클린', bgmMood: 'calm', titleCard: false },
+      { id: 'promo', name: '프로모', bgmMood: 'energetic', titleCard: true },
+    ],
+    bgmCatalog: [
+      {
+        id: 'bgm_calm_01',
+        name: 'Calm',
+        moods: ['calm'],
+        durationSeconds: 24,
+        file: 'bgm_calm_01.m4a',
+        licenseNote: 'CC0',
+      },
+    ],
     checkRedis: async () => true,
     checkPostgres: async () => true,
     enqueued,

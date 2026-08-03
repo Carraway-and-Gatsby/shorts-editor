@@ -1,11 +1,13 @@
 import { canTransition, TERMINAL_STATUSES, type Composition, type JobStage, type JobStatus } from '@shorts/shared';
 import type {
   CreateJobInput,
+  JobListPage,
   JobRow,
   OutputRow,
   Repos,
   SessionRow,
   SourceMeta,
+  SttCorrectionInput,
   UploadRow,
   UploadStatus,
 } from './types.js';
@@ -15,7 +17,11 @@ import type {
  * PG 구현과 동일한 의미론(낙관적 전이, 종료 상태 보호)을 유지해야 한다.
  */
 export function createMemoryRepos(): Repos & {
-  dump(): { jobs: Map<string, JobRow> };
+  dump(): {
+    jobs: Map<string, JobRow>;
+    corrections: SttCorrectionInput[];
+    cleaned: Set<string>;
+  };
 } {
   const sessions = new Map<string, SessionRow>();
   const uploads = new Map<string, UploadRow>();
@@ -23,6 +29,10 @@ export function createMemoryRepos(): Repos & {
   const compositions = new Map<string, Composition>();
   const compositionMeta = new Map<string, 'auto' | 'user'>();
   const outputs = new Map<string, OutputRow>();
+  const deletedOutputs = new Set<string>();
+  const drafts = new Map<string, Composition>();
+  const cleaned = new Set<string>();
+  const corrections: SttCorrectionInput[] = [];
 
   const compKey = (jobId: string, revision: number) => `${jobId}:${revision}`;
 
@@ -79,6 +89,20 @@ export function createMemoryRepos(): Repos & {
       },
       async find(id: string): Promise<JobRow | null> {
         return jobs.get(id) ?? null;
+      },
+      async listBySession(sessionId: string, limit: number, cursor?: string): Promise<JobListPage> {
+        let list = [...jobs.values()]
+          .filter((j) => j.sessionId === sessionId)
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1));
+        if (cursor) {
+          const index = list.findIndex((j) => j.id === cursor);
+          list = index >= 0 ? list.slice(index + 1) : list;
+        }
+        const page = list.slice(0, limit);
+        return {
+          jobs: page,
+          nextCursor: list.length > limit ? page[page.length - 1].id : null,
+        };
       },
       async transition(
         id: string,
@@ -149,14 +173,47 @@ export function createMemoryRepos(): Repos & {
       },
       async insertOutput(output: OutputRow): Promise<void> {
         outputs.set(compKey(output.jobId, output.revision), output);
+        deletedOutputs.delete(compKey(output.jobId, output.revision));
       },
       async getOutput(jobId: string, revision: number): Promise<OutputRow | null> {
-        return outputs.get(compKey(jobId, revision)) ?? null;
+        const key = compKey(jobId, revision);
+        return deletedOutputs.has(key) ? null : (outputs.get(key) ?? null);
+      },
+      async listOutputs(jobId: string): Promise<OutputRow[]> {
+        return [...outputs.values()]
+          .filter((o) => o.jobId === jobId && !deletedOutputs.has(compKey(o.jobId, o.revision)))
+          .sort((a, b) => b.revision - a.revision);
+      },
+      async markOutputDeleted(jobId: string, revision: number): Promise<void> {
+        deletedOutputs.add(compKey(jobId, revision));
+      },
+      async getDraft(jobId: string): Promise<Composition | null> {
+        return drafts.get(jobId) ?? null;
+      },
+      async setDraft(jobId: string, composition: Composition): Promise<void> {
+        drafts.set(jobId, composition);
+      },
+      async clearDraft(jobId: string): Promise<void> {
+        drafts.delete(jobId);
+      },
+      async listExpired(now: Date, limit: number): Promise<JobRow[]> {
+        return [...jobs.values()]
+          .filter((j) => j.expiresAt.getTime() < now.getTime() && !cleaned.has(j.id))
+          .slice(0, limit);
+      },
+      async markCleaned(jobId: string): Promise<void> {
+        cleaned.add(jobId);
+      },
+    },
+
+    corrections: {
+      async insert(input: SttCorrectionInput): Promise<void> {
+        corrections.push(input);
       },
     },
 
     dump() {
-      return { jobs };
+      return { jobs, corrections, cleaned };
     },
   };
 }

@@ -96,9 +96,23 @@ export interface CreateJobInput {
   expiresAt: Date;
 }
 
+export interface JobListPage {
+  jobs: JobRow[];
+  nextCursor: string | null;
+}
+
+export interface SttCorrectionInput {
+  jobId: string;
+  blockId: string;
+  originalText: string;
+  correctedText: string;
+}
+
 export interface JobsRepo {
   create(input: CreateJobInput): Promise<JobRow>;
   find(id: string): Promise<JobRow | null>;
+  /** 세션의 잡 목록 (최신순, 커서 페이지네이션) */
+  listBySession(sessionId: string, limit: number, cursor?: string): Promise<JobListPage>;
   /**
    * 낙관적 상태 전이. 현재 상태가 from일 때만 to로 바꾼다.
    * @returns 전이 성공 여부
@@ -121,10 +135,25 @@ export interface JobsRepo {
   getComposition(jobId: string, revision: number): Promise<Composition | null>;
   insertOutput(output: OutputRow): Promise<void>;
   getOutput(jobId: string, revision: number): Promise<OutputRow | null>;
+  /** 삭제되지 않은 출력물 목록 (리비전 내림차순) */
+  listOutputs(jobId: string): Promise<OutputRow[]>;
+  markOutputDeleted(jobId: string, revision: number): Promise<void>;
+  /** 보정용 드래프트 컴포지션 (F-21/F-22). 재렌더링 시 리비전으로 확정된다. */
+  getDraft(jobId: string): Promise<Composition | null>;
+  setDraft(jobId: string, composition: Composition): Promise<void>;
+  clearDraft(jobId: string): Promise<void>;
+  /** 보관 기한이 지났고 아직 정리되지 않은 잡 (정리 배치용) */
+  listExpired(now: Date, limit: number): Promise<JobRow[]>;
+  markCleaned(jobId: string): Promise<void>;
+}
+
+export interface CorrectionsRepo {
+  insert(input: SttCorrectionInput): Promise<void>;
 }
 
 export interface Repos {
   sessions: SessionsRepo;
   uploads: UploadsRepo;
   jobs: JobsRepo;
+  corrections: CorrectionsRepo;
 }

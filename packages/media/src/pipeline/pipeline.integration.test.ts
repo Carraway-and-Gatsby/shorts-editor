@@ -12,11 +12,14 @@ import { createMemoryRepos, type JobOptions } from '@shorts/db';
 import type { AnalysisDoc } from '@shorts/shared';
 import { LocalFsStorage, storageKeys, uploadFromFile } from '@shorts/storage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { applyCompositionPatch } from '../compose/edit.js';
 import { ffmpegAvailable, probeFile } from '../run.js';
 import type { PipelineDeps, StagePayload } from './deps.js';
 import { processComposeJob } from './compose.js';
 import { processIngestJob } from './ingest.js';
 import { processRenderJob } from './render.js';
+
+const BGM_DIR = path.resolve(process.cwd(), '..', '..', 'assets', 'bgm');
 
 const execFileAsync = promisify(execFile);
 const FFMPEG = process.env.FFMPEG_PATH ?? 'ffmpeg';
@@ -212,6 +215,52 @@ describe.skipIf(!hasFfmpeg)('pipeline integration (ffmpeg)', () => {
     expect(outProbe?.hasAudio).toBe(true);
     // 출력 길이 = 선택된 컷 합 (±1초 컨테이너 오차)
     expect(Math.abs((outProbe?.duration ?? 0) - composition!.output.duration)).toBeLessThan(1);
+
+    // ---- UC-2: 자막 수정 + 컷 변경 후 BGM을 얹어 재렌더 (리비전 2) ----
+    const patched = applyCompositionPatch(
+      composition!,
+      { cuts: [{ id: 'c1', sourceStart: 5, sourceEnd: 13, transition: 'cut' }] },
+      analysis.transcript,
+    );
+    expect(patched.ok).toBe(true);
+    if (!patched.ok) {
+      return;
+    }
+    const editedBlocks = patched.composition.subtitles.blocks.map((b, i) =>
+      i === 0 ? { ...b, text: '교정된 자막' } : b,
+    );
+    const revision2 = {
+      ...patched.composition,
+      revision: 2,
+      subtitles: { ...patched.composition.subtitles, blocks: editedBlocks },
+      audio: {
+        ...patched.composition.audio,
+        bgm: { trackId: 'bgm_calm_01', gainDb: -18, duckDb: -24 },
+      },
+    };
+    await harness.repos.jobs.insertComposition(jobId, 2, revision2, 'user');
+    expect(await harness.repos.jobs.transition(jobId, 'DONE', 'RENDERING', { progress: 50 })).toBe(
+      true,
+    );
+
+    await processRenderJob({ ...harness.deps, bgmDir: BGM_DIR }, { jobId, revision: 2 });
+    job = await harness.repos.jobs.find(jobId);
+    expect(job?.status).toBe('DONE');
+    expect(job?.currentRevision).toBe(2);
+
+    const output2 = await harness.repos.jobs.getOutput(jobId, 2);
+    expect(output2).not.toBeNull();
+    const out2Path = path.join(workDir, 'uc2-out.mp4');
+    const stream2 = await harness.storage.getStream(output2!.storageKey);
+    await pipeline(stream2, createWriteStream(out2Path));
+    const out2Probe = await probeFile(out2Path);
+    expect(out2Probe?.width).toBe(1080);
+    expect(out2Probe?.hasAudio).toBe(true);
+    // 컷 5~13초 → 출력 약 8초
+    expect(out2Probe?.duration).toBeGreaterThan(7);
+    expect(out2Probe?.duration).toBeLessThan(9.5);
+    // 리비전 1 출력물도 보존됨 (최근 5개 보관)
+    expect(await harness.repos.jobs.getOutput(jobId, 1)).not.toBeNull();
   }, 300_000);
 
   it('UC-3: silent video gets shot-based cuts, no subtitles, pad mode', async () => {

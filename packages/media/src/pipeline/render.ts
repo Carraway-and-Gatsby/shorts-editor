@@ -105,11 +105,24 @@ export async function processRenderJob(
     }
     await repos.jobs.setProgress(jobId, 'render', 90);
 
-    // 3. 최종 패스: 자막 번인(F-14) + 라우드니스(-14 LUFS)
+    // 3. 최종 패스: 자막·타이틀 카드 번인(F-14/F-16) + BGM 믹싱(F-15) + 라우드니스(-14 LUFS)
     let assPath: string | null = null;
-    if (composition.subtitles.blocks.length > 0) {
+    if (composition.subtitles.blocks.length > 0 || composition.style.titleCard) {
       assPath = path.join(tempDir, 'subtitles.ass');
       await fs.writeFile(assPath, buildAssDocument(composition.subtitles.blocks, composition.style));
+    }
+    let bgm: { path: string; gainDb: number } | null = null;
+    if (composition.audio.bgm) {
+      const bgmPath = path.join(
+        deps.bgmDir ?? './assets/bgm',
+        `${composition.audio.bgm.trackId}.m4a`,
+      );
+      try {
+        await fs.access(bgmPath);
+        bgm = { path: bgmPath, gainDb: composition.audio.bgm.gainDb };
+      } catch {
+        console.warn(`[render] bgm track missing, skipping: ${bgmPath}`);
+      }
     }
     const outputPath = path.join(tempDir, 'output.mp4');
     await runFfmpeg(
@@ -119,6 +132,8 @@ export async function processRenderJob(
         assPath,
         hasAudio,
         loudnessTarget: composition.audio.loudnessTarget,
+        bgm,
+        outputDuration: composition.output.duration,
       }),
     );
     await repos.jobs.setProgress(jobId, 'render', 96);
@@ -147,6 +162,13 @@ export async function processRenderJob(
       sizeBytes: outputStat.size,
       createdAt: new Date(),
     });
+
+    // 리비전 보관 상한: 최근 5개만 파일 유지 (docs/07-data-model.md §7.5)
+    const allOutputs = await repos.jobs.listOutputs(jobId);
+    for (const old of allOutputs.slice(5)) {
+      await storage.delete(old.storageKey).catch(() => {});
+      await repos.jobs.markOutputDeleted(old.jobId, old.revision);
+    }
 
     await repos.jobs.transition(jobId, 'RENDERING', 'DONE', { progress: 100 });
   } catch (err) {

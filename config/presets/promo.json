@@ -1,0 +1,7 @@
+{
+  "id": "promo",
+  "name": "프로모",
+  "description": "타이틀 카드와 템포 빠른 BGM. 홍보 영상용.",
+  "bgmMood": "energetic",
+  "titleCard": true
+}

@@ -167,6 +167,12 @@ export function buildConcatArgs(listPath: string, outputPath: string): string[] 
   return ['-y', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath];
 }
 
+export interface FinalPassBgm {
+  /** BGM 트랙 파일 경로 */
+  path: string;
+  gainDb: number;
+}
+
 export interface FinalPassInput {
   inputPath: string;
   outputPath: string;
@@ -174,18 +180,68 @@ export interface FinalPassInput {
   assPath: string | null;
   hasAudio: boolean;
   loudnessTarget: number;
+  /** BGM 믹싱 (F-15). null이면 원본 오디오만. */
+  bgm?: FinalPassBgm | null;
+  /** 출력 길이(초) — BGM 트림/페이드 계산용 */
+  outputDuration: number;
 }
 
-/** 최종 패스: 자막 번인(있을 때만 재인코딩) + 라우드니스 노멀라이즈 + faststart */
+/** BGM 체인: 게인 → 길이 맞춤(루프+트림) → 페이드인 0.5s / 페이드아웃 1.5s (F-15 규칙 3) */
+function bgmChain(bgm: FinalPassBgm, duration: number): string {
+  const fadeOutStart = Math.max(0, duration - 1.5);
+  return (
+    `[1:a]volume=${bgm.gainDb}dB,atrim=0:${duration.toFixed(3)},` +
+    `afade=t=in:d=0.5,afade=t=out:st=${fadeOutStart.toFixed(3)}:d=1.5[bgm]`
+  );
+}
+
+/**
+ * 최종 패스: 자막 번인(있을 때만 비디오 재인코딩) + BGM 믹싱(사이드체인 덕킹) +
+ * 라우드니스 노멀라이즈(-14 LUFS) + faststart.
+ */
 export function buildFinalPassArgs(input: FinalPassInput): string[] {
+  const loudnorm = `loudnorm=I=${input.loudnessTarget}:TP=-1.5:LRA=11`;
   const args = ['-y', '-i', input.inputPath];
-  if (input.assPath) {
-    args.push('-vf', `subtitles=${input.assPath}`, ...VIDEO_ENCODE_ARGS);
-  } else {
-    args.push('-c:v', 'copy');
+  if (input.bgm) {
+    // BGM 입력만 무한 루프로 열고(atrim이 출력 길이로 자른다) 메인 입력은 그대로 둔다
+    args.push('-stream_loop', '-1', '-i', input.bgm.path);
   }
-  if (input.hasAudio) {
-    args.push('-af', `loudnorm=I=${input.loudnessTarget}:TP=-1.5:LRA=11`, ...AUDIO_ENCODE_ARGS);
+
+  const filters: string[] = [];
+  let audioMap: string | null = null;
+
+  if (input.bgm && input.hasAudio) {
+    // 원본 음성 + BGM: 음성을 사이드체인으로 BGM을 덕킹(발화 중 감쇠) 후 믹스
+    filters.push(
+      '[0:a]asplit=2[voice][sc]',
+      bgmChain(input.bgm, input.outputDuration),
+      '[bgm][sc]sidechaincompress=threshold=0.03:ratio=8:attack=100:release=800[duck]',
+      `[voice][duck]amix=inputs=2:duration=first:normalize=0,${loudnorm}[aout]`,
+    );
+    audioMap = '[aout]';
+  } else if (input.bgm) {
+    filters.push(`${bgmChain(input.bgm, input.outputDuration)};[bgm]${loudnorm}[aout]`);
+    audioMap = '[aout]';
+  } else if (input.hasAudio) {
+    filters.push(`[0:a]${loudnorm}[aout]`);
+    audioMap = '[aout]';
+  }
+
+  if (input.assPath) {
+    filters.push(`[0:v]subtitles=${input.assPath}[vout]`);
+  }
+
+  if (filters.length > 0) {
+    args.push('-filter_complex', filters.join(';'));
+  }
+
+  if (input.assPath) {
+    args.push('-map', '[vout]', ...VIDEO_ENCODE_ARGS);
+  } else {
+    args.push('-map', '0:v', '-c:v', 'copy');
+  }
+  if (audioMap) {
+    args.push('-map', audioMap, ...AUDIO_ENCODE_ARGS);
   }
   args.push('-movflags', '+faststart', input.outputPath);
   return args;

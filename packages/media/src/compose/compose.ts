@@ -11,10 +11,14 @@ import {
   type AnalysisDoc,
   type Composition,
 } from '@shorts/shared';
+import { selectBgm, type BgmTrackDef } from './bgm.js';
 import { selectHighlights } from './highlight.js';
+import { resolvePreset, type PresetDef } from './presets.js';
 import { buildReframe } from './reframe.js';
 import type { ScoringConfig } from './scoring.js';
 import { buildSubtitles } from './subtitles.js';
+
+const TITLE_CARD_MAX_CHARS = 24;
 
 export interface BuildCompositionInput {
   jobId: string;
@@ -22,10 +26,22 @@ export interface BuildCompositionInput {
   analysis: AnalysisDoc;
   options: JobOptions;
   scoring?: ScoringConfig;
+  presets?: Record<string, PresetDef>;
+  bgmCatalog?: BgmTrackDef[];
+}
+
+/** 타이틀 카드 문구 (F-16): STT 첫 문장을 잘라 사용 */
+function titleCardText(analysis: AnalysisDoc): string | null {
+  const first = analysis.transcript?.segments[0]?.text?.trim();
+  if (!first) {
+    return null;
+  }
+  return first.length > TITLE_CARD_MAX_CHARS ? `${first.slice(0, TITLE_CARD_MAX_CHARS)}…` : first;
 }
 
 export function buildCompositionFromAnalysis(input: BuildCompositionInput): Composition {
   const { analysis, options } = input;
+  const preset = resolvePreset(options.preset, input.presets);
 
   const highlights = selectHighlights(analysis, options.targetDuration, input.scoring);
   const fps = Math.min(OUTPUT_MAX_FPS, analysis.source.fps || OUTPUT_MAX_FPS);
@@ -36,6 +52,7 @@ export function buildCompositionFromAnalysis(input: BuildCompositionInput): Comp
     options.preset,
     options.subtitle === 'on',
   );
+  const bgm = selectBgm(options.bgm, preset, analysis, input.bgmCatalog ?? []);
 
   const composition: Composition = {
     version: 1,
@@ -50,8 +67,12 @@ export function buildCompositionFromAnalysis(input: BuildCompositionInput): Comp
     cuts: highlights.cuts,
     reframe,
     subtitles,
-    audio: { bgm: null, loudnessTarget: -14 },
-    style: { preset: options.preset, titleCard: null, lut: null },
+    audio: { bgm, loudnessTarget: -14 },
+    style: {
+      preset: options.preset,
+      titleCard: preset.titleCard ? titleCardText(analysis) : null,
+      lut: null,
+    },
   };
 
   const validation = validateComposition(composition);

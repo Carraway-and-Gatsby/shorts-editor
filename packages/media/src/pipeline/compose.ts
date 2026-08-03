@@ -1,7 +1,6 @@
 import { buildDefaultComposition, isAnalysisDoc, type AnalysisDoc } from '@shorts/shared';
 import { storageKeys } from '@shorts/storage';
 import { buildCompositionFromAnalysis } from '../compose/compose.js';
-import type { ScoringConfig } from '../compose/scoring.js';
 import type { PipelineDeps, StagePayload } from './deps.js';
 
 /**
@@ -9,10 +8,7 @@ import type { PipelineDeps, StagePayload } from './deps.js';
  * analysis.json + 옵션 → 컴포지션 산출 → Render enqueue.
  * 분석 결과가 없거나 손상된 경우 기본 컴포지션으로 폴백한다 (NFR-23).
  */
-export async function processComposeJob(
-  deps: PipelineDeps & { scoring?: ScoringConfig },
-  payload: StagePayload,
-): Promise<void> {
+export async function processComposeJob(deps: PipelineDeps, payload: StagePayload): Promise<void> {
   const { jobId, revision } = payload;
   const { repos, storage } = deps;
 
@@ -52,6 +48,8 @@ export async function processComposeJob(
             analysis,
             options: job.options,
             scoring: deps.scoring,
+            presets: deps.presets,
+            bgmCatalog: deps.bgmCatalog,
           })
         : buildDefaultComposition({
             jobId,

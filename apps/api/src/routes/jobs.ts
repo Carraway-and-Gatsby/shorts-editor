@@ -58,6 +58,36 @@ function fileUrl(
 export function registerJobRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { repos } = deps;
 
+  // 잡 이력 목록 (F-41)
+  app.get<{ Querystring: { limit?: string; cursor?: string } }>(
+    '/api/v1/jobs',
+    async (req, reply) => {
+      const limit = Math.min(50, Math.max(1, Number(req.query.limit ?? 20) || 20));
+      const page = await repos.jobs.listBySession(req.sessionId, limit, req.query.cursor);
+      const items = await Promise.all(
+        page.jobs.map(async (job) => {
+          const output =
+            job.status === 'DONE' ? await repos.jobs.getOutput(job.id, job.currentRevision) : null;
+          return {
+            jobId: job.id,
+            status: job.status,
+            progress: job.progress,
+            createdAt: job.createdAt.toISOString(),
+            preset: job.options.preset,
+            duration: output?.duration ?? null,
+            thumbnailUrl: fileUrl(
+              deps,
+              `jobs/${job.id}/thumbnail.jpg`,
+              'inline',
+              THUMBNAIL_TTL_HOURS,
+            ),
+          };
+        }),
+      );
+      return reply.send({ jobs: items, nextCursor: page.nextCursor });
+    },
+  );
+
   // 잡 상세 (F-40)
   app.get<{ Params: { id: string } }>('/api/v1/jobs/:id', async (req, reply) => {
     const job = await repos.jobs.find(req.params.id);

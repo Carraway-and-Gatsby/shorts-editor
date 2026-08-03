@@ -122,6 +122,11 @@ data: {"status":"FAILED","error":{"code":"RENDER_FAILED","message":"…"}}
 ### `GET /jobs/{jobId}/composition` — 현재 컴포지션 조회
 응답: [4.3.3 composition.json 스키마](04-pipeline-spec.md#433-compositionjson-스키마-요약) + `analysisSummary`(타임라인 UI용 세그먼트/자막 원본 정보).
 
+> 구현 노트(v1): PATCH는 잡의 **드래프트 컴포지션**에 저장되며 리비전은 증가하지 않는다.
+> `POST /render`가 드래프트를 새 리비전으로 확정한다. 응답의 `hasDraft`로 드래프트 존재를 알 수 있다.
+> 컷을 수정하면 자막 블록은 분석 transcript 기준으로 자동 리매핑된다(F-21).
+> 프리셋/BGM의 사후 교체(F-23)는 v2 범위다.
+
 ### `PATCH /jobs/{jobId}/composition` — 컴포지션 수정 (F-21/F-22/F-23)
 ```json
 // Request — 수정할 부분만 전달 (JSON Merge Patch 의미론)

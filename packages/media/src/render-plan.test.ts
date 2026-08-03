@@ -141,6 +141,7 @@ describe('buildFinalPassArgs', () => {
       assPath: null,
       hasAudio: true,
       loudnessTarget: -14,
+      outputDuration: 30,
     });
     expect(args).toContain('copy');
     expect(args.join(' ')).toContain('loudnorm=I=-14');
@@ -154,9 +155,47 @@ describe('buildFinalPassArgs', () => {
       assPath: '/tmp/subs.ass',
       hasAudio: false,
       loudnessTarget: -14,
+      outputDuration: 30,
     });
     expect(args.join(' ')).toContain('subtitles=/tmp/subs.ass');
     expect(args.join(' ')).not.toContain('loudnorm');
+  });
+
+  it('mixes bgm with sidechain ducking when the source has audio', () => {
+    const args = buildFinalPassArgs({
+      inputPath: 'in.mp4',
+      outputPath: 'out.mp4',
+      assPath: null,
+      hasAudio: true,
+      loudnessTarget: -14,
+      bgm: { path: '/bgm/calm.m4a', gainDb: -18 },
+      outputDuration: 30,
+    });
+    const joined = args.join(' ');
+    expect(joined).toContain('-stream_loop -1');
+    expect(joined).toContain('/bgm/calm.m4a');
+    expect(joined).toContain('volume=-18dB');
+    expect(joined).toContain('sidechaincompress');
+    expect(joined).toContain('amix=inputs=2');
+    expect(joined).toContain('afade=t=out:st=28.500');
+    expect(joined).toContain('loudnorm=I=-14');
+  });
+
+  it('uses bgm alone for silent sources', () => {
+    const args = buildFinalPassArgs({
+      inputPath: 'in.mp4',
+      outputPath: 'out.mp4',
+      assPath: null,
+      hasAudio: false,
+      loudnessTarget: -14,
+      bgm: { path: '/bgm/calm.m4a', gainDb: -8 },
+      outputDuration: 10,
+    });
+    const joined = args.join(' ');
+    expect(joined).toContain('volume=-8dB');
+    expect(joined).not.toContain('sidechaincompress');
+    expect(joined).toContain('atrim=0:10.000');
+    expect(joined).toContain('loudnorm');
   });
 });
 
@@ -192,5 +231,21 @@ describe('ass generation', () => {
     expect(doc).toContain('Noto Sans CJK KR');
     expect(doc).toContain('Dialogue: 0,0:00:00.40,0:00:01.90,Default,,0,0,0,,안녕하세요!');
     expect(doc.split('Dialogue:').length - 1).toBe(2);
+  });
+
+  it('adds a title card event when the style has one', () => {
+    const doc = buildAssDocument([], { preset: 'promo', titleCard: '제품 소개 영상' });
+    expect(doc).toContain('Style: TitleCard');
+    expect(doc).toContain('TitleCard,,0,0,0,,제품 소개 영상');
+  });
+
+  it('renders styles for all four presets', () => {
+    for (const preset of ['clean', 'bold', 'vlog', 'promo']) {
+      const doc = buildAssDocument(
+        [{ id: 's1', start: 0, end: 1, text: 'x', words: [] }],
+        { preset },
+      );
+      expect(doc).toContain('Style: Default');
+    }
   });
 });

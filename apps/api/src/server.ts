@@ -3,6 +3,8 @@ import { newId } from '@shorts/db';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AppDeps } from './deps.js';
 import { CHUNK_SIZE } from './lib/upload-rules.js';
+import { registerCatalogRoutes } from './routes/catalogs.js';
+import { registerCompositionRoutes } from './routes/compositions.js';
 import { registerFileRoutes } from './routes/files.js';
 import { registerJobRoutes } from './routes/jobs.js';
 import { registerUploadRoutes } from './routes/uploads.js';
@@ -69,6 +71,8 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
 
   registerUploadRoutes(app, deps);
   registerJobRoutes(app, deps);
+  registerCompositionRoutes(app, deps);
+  registerCatalogRoutes(app, deps);
   registerFileRoutes(app, deps);
 
   return app;

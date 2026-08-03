@@ -1,0 +1,29 @@
+[project]
+name = "shorts-analyze-worker"
+version = "0.1.0"
+description = "Scene/speech analysis worker for Shorts Editor"
+requires-python = ">=3.11"
+dependencies = [
+    "redis>=5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+extend-exclude = ["build"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

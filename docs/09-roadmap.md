@@ -5,10 +5,10 @@
 
 ## M0 — 프로젝트 골격
 
-- [ ] 모노레포 구조 셋업 (`apps/`, `workers/`, `packages/`) + Docker Compose
-- [ ] CI: 린트, 타입체크, 테스트 파이프라인
-- [ ] `packages/shared`: composition 스키마(JSON Schema + 타입), 잡 상태 상수
-- [ ] 큐/스토리지 추상화 인터페이스와 로컬 구현체
+- [x] 모노레포 구조 셋업 (`apps/`, `workers/`, `packages/`) + Docker Compose
+- [x] CI: 린트, 타입체크, 테스트 파이프라인
+- [x] `packages/shared`: composition 스키마(JSON Schema + 타입), 잡 상태 상수
+- [x] 큐/스토리지 추상화 인터페이스와 로컬 구현체 (`packages/queue`, `packages/storage`)
 
 **완료 기준**: `docker compose up`으로 전 서비스가 뜨고 헬스체크가 통과한다.
 

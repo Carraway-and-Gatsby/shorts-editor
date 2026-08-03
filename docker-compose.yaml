@@ -1,0 +1,136 @@
+name: shorts-editor
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shorts
+      POSTGRES_PASSWORD: shorts
+      POSTGRES_DB: shorts
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U shorts -d shorts']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      PORT: 3000
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgres://shorts:shorts@postgres:5432/shorts
+      STORAGE_ROOT: /data/storage
+    ports:
+      - '3000:3000'
+    volumes:
+      - storage:/data/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/healthz || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - '8080:80'
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:80/ || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker-ingest:
+    build:
+      context: .
+      dockerfile: workers/ingest/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      STORAGE_ROOT: /data/storage
+      HEALTH_PORT: 8081
+    volumes:
+      - storage:/data/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8081/healthz || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  worker-render:
+    build:
+      context: .
+      dockerfile: workers/render/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      STORAGE_ROOT: /data/storage
+      HEALTH_PORT: 8082
+    volumes:
+      - storage:/data/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8082/healthz || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  worker-analyze:
+    build:
+      context: .
+      dockerfile: workers/analyze/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      STORAGE_ROOT: /data/storage
+      HEALTH_PORT: 8083
+    volumes:
+      - storage:/data/storage
+      - models:/models
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8083/healthz', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  pgdata:
+  storage:
+  models:

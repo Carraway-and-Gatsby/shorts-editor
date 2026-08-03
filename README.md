@@ -7,7 +7,36 @@
 
 ## 프로젝트 상태
 
-현재 **명세(Specification) 단계**입니다. 구현에 앞서 기능 정의부터 아키텍처까지 문서를 순차적으로 확정합니다.
+명세 확정 후 **M0(프로젝트 골격)까지 구현**된 상태입니다. 다음 마일스톤은 M1(파이프라인 뼈대)입니다.
+전체 계획은 [로드맵](docs/09-roadmap.md)을 참조하세요.
+
+## 시작하기
+
+### 전체 스택 실행 (Docker Compose)
+
+```bash
+docker compose up --build
+```
+
+| 서비스 | 주소 |
+|--------|------|
+| 웹 UI | http://localhost:8080 |
+| API | http://localhost:3000 (헬스체크: `/healthz`) |
+
+### 로컬 개발
+
+```bash
+pnpm install        # Node >= 20, pnpm 10
+pnpm build          # 전체 패키지 빌드
+pnpm lint           # ESLint
+pnpm typecheck      # 타입 검사
+pnpm test           # 단위 테스트
+
+# Python 분석 워커
+pip install './workers/analyze[dev]'
+ruff check workers/analyze
+pytest workers/analyze/tests
+```
 
 ## 문서 목차
 

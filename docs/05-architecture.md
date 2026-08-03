@@ -93,7 +93,8 @@ shorts-editor/
 │   └── render/         # Node + ffmpeg
 ├── packages/
 │   ├── shared/         # 타입, composition 스키마, 상태 상수
-│   └── queue/          # 큐 클라이언트 래퍼
+│   ├── storage/        # 오브젝트 스토리지 추상화 (로컬 FS / S3)
+│   └── queue/          # 큐 클라이언트 래퍼, 워커 공통 런타임
 ├── config/
 │   ├── scoring.yaml    # 하이라이트 가중치
 │   └── presets/        # 스타일 프리셋 정의

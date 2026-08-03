@@ -7,9 +7,18 @@
 
 ## 프로젝트 상태
 
-**M1(파이프라인 뼈대)까지 구현**된 상태입니다: 영상을 업로드하면 검증 → 9:16 변환(pad 모드) →
-1080×1920 MP4 다운로드까지 동작합니다. 하이라이트 컷·자막 등 자동 편집 두뇌는 다음 마일스톤(M2)입니다.
+**M2(자동 편집 두뇌)까지 구현 — MVP(v0)** 상태입니다. 영상을 업로드하면:
+
+1. 검증·프록시 생성 (Ingest)
+2. 장면 분석(샷·모션·얼굴) + STT (Analyze, Python)
+3. 하이라이트 컷 선택 + 피사체 추적 크롭 경로 + 자막 블록 (Compose)
+4. 9:16 변환(track/pad) + 자막 번인 + 라우드니스 정규화 (Render)
+
+를 거쳐 1080×1920 MP4가 나옵니다. 다음 마일스톤은 M3(보정과 스타일)입니다.
 전체 계획은 [로드맵](docs/09-roadmap.md)을 참조하세요.
+
+> STT 모델(faster-whisper)은 첫 실행 시 다운로드됩니다. `WHISPER_MODEL`(기본 `base`)로 크기를
+> 조절할 수 있으며, STT를 사용할 수 없는 환경에서는 자막 없이 자동 진행됩니다.
 
 ## 시작하기
 
@@ -33,10 +42,13 @@ pnpm lint           # ESLint
 pnpm typecheck      # 타입 검사
 pnpm test           # 단위 테스트
 
-# Python 분석 워커
+# Python 분석 워커 (STT까지 쓰려면 '.[dev,stt]')
 pip install './workers/analyze[dev]'
 ruff check workers/analyze
 pytest workers/analyze/tests
+
+# 하이라이트 가중치 평가 루프 (eval/README.md 참조)
+pnpm eval
 ```
 
 ## 문서 목차

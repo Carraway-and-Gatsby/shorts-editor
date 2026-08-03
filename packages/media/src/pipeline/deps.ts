@@ -13,6 +13,7 @@ export interface StagePayload {
 export interface PipelineDeps {
   repos: Repos;
   storage: ObjectStorage;
+  enqueueAnalyze(payload: StagePayload): Promise<void>;
   enqueueRender(payload: StagePayload): Promise<void>;
   /** 임시 작업 디렉터리 루트 (기본: os.tmpdir()) */
   tempRoot?: string;

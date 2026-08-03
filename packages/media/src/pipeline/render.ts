@@ -2,7 +2,15 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { downloadToFile, storageKeys, uploadFromFile } from '@shorts/storage';
-import { buildRenderArgs, buildThumbnailArgs } from '../commands.js';
+import { buildAssDocument } from '../ass.js';
+import { buildThumbnailArgs } from '../commands.js';
+import {
+  buildConcatArgs,
+  buildConcatList,
+  buildCutFilter,
+  buildCutRenderArgs,
+  buildFinalPassArgs,
+} from '../render-plan.js';
 import { FfmpegError, probeFile, runFfmpeg } from '../run.js';
 import type { PipelineDeps, StagePayload } from './deps.js';
 
@@ -13,8 +21,7 @@ export interface RenderAttemptInfo {
 
 /**
  * Render 단계 (docs/04-pipeline-spec.md §4.4):
- * 컴포지션의 컷을 원본에서 추출해 9:16 pad 변환 후 최종 MP4로 인코딩한다.
- * M1 제약: 단일 컷 컴포지션만 지원 (기본 컴포지션이 항상 단일 컷).
+ * 컷별 9:16 변환(중간 파일) → concat → 자막 번인 + 라우드니스 → 최종 MP4.
  */
 export async function processRenderJob(
   deps: PipelineDeps,
@@ -40,42 +47,88 @@ export async function processRenderJob(
     if (!composition) {
       throw new Error(`composition not found: ${jobId} r${revision}`);
     }
-    if (composition.cuts.length !== 1) {
-      throw new Error(`M1 renderer supports exactly one cut, got ${composition.cuts.length}`);
-    }
-    const cut = composition.cuts[0];
+    const hasAudio = job.sourceMeta?.hasAudio ?? true;
+    const source = {
+      width: job.sourceMeta?.width ?? composition.output.width,
+      height: job.sourceMeta?.height ?? composition.output.height,
+    };
 
     const sourcePath = path.join(tempDir, `source.${job.sourceExt}`);
     await downloadToFile(storage, storageKeys.source(jobId, job.sourceExt), sourcePath);
     await repos.jobs.setProgress(jobId, 'render', 52);
 
-    // 인코딩 (진행률 52% → 97%)
-    const outputPath = path.join(tempDir, 'output.mp4');
-    const cutDuration = cut.sourceEnd - cut.sourceStart;
-    await runFfmpeg(
-      buildRenderArgs({
-        inputPath: sourcePath,
-        outputPath,
-        cut,
-        fps: composition.output.fps,
-        hasAudio: job.sourceMeta?.hasAudio ?? true,
-        width: composition.output.width,
-        height: composition.output.height,
-      }),
-      {
-        totalDuration: cutDuration,
-        onProgress: (ratio) => {
-          void repos.jobs.setProgress(jobId, 'render', Math.round(52 + ratio * 45));
+    // 1. 컷별 중간 파일 (진행률 52% → 88%)
+    const totalDuration = composition.cuts.reduce((s, c) => s + (c.sourceEnd - c.sourceStart), 0);
+    const intermediates: string[] = [];
+    let renderedSoFar = 0;
+    let cutOutputStart = 0;
+    for (const [i, cut] of composition.cuts.entries()) {
+      const filter = buildCutFilter({ composition, cut, cutOutputStart, source });
+      const filterScriptPath = path.join(tempDir, `filter_${i}.txt`);
+      await fs.writeFile(filterScriptPath, filter);
+      const outputPath = path.join(tempDir, `cut_${i}.mp4`);
+      const cutDuration = cut.sourceEnd - cut.sourceStart;
+      const baseProgress = renderedSoFar;
+      await runFfmpeg(
+        buildCutRenderArgs({
+          composition,
+          cut,
+          cutOutputStart,
+          source,
+          inputPath: sourcePath,
+          filterScriptPath,
+          outputPath,
+          hasAudio,
+        }),
+        {
+          totalDuration: cutDuration,
+          onProgress: (ratio) => {
+            const overall = (baseProgress + ratio * cutDuration) / totalDuration;
+            void repos.jobs.setProgress(jobId, 'render', Math.round(52 + overall * 36));
+          },
         },
-      },
+      );
+      intermediates.push(outputPath);
+      renderedSoFar += cutDuration;
+      cutOutputStart += cutDuration;
+    }
+
+    // 2. concat (스트림 복사)
+    let combinedPath: string;
+    if (intermediates.length === 1) {
+      combinedPath = intermediates[0];
+    } else {
+      const listPath = path.join(tempDir, 'concat.txt');
+      await fs.writeFile(listPath, buildConcatList(intermediates));
+      combinedPath = path.join(tempDir, 'combined.mp4');
+      await runFfmpeg(buildConcatArgs(listPath, combinedPath));
+    }
+    await repos.jobs.setProgress(jobId, 'render', 90);
+
+    // 3. 최종 패스: 자막 번인(F-14) + 라우드니스(-14 LUFS)
+    let assPath: string | null = null;
+    if (composition.subtitles.blocks.length > 0) {
+      assPath = path.join(tempDir, 'subtitles.ass');
+      await fs.writeFile(assPath, buildAssDocument(composition.subtitles.blocks, composition.style));
+    }
+    const outputPath = path.join(tempDir, 'output.mp4');
+    await runFfmpeg(
+      buildFinalPassArgs({
+        inputPath: combinedPath,
+        outputPath,
+        assPath,
+        hasAudio,
+        loudnessTarget: composition.audio.loudnessTarget,
+      }),
     );
+    await repos.jobs.setProgress(jobId, 'render', 96);
 
     const outputProbe = await probeFile(outputPath);
     const outputStat = await fs.stat(outputPath);
 
     const thumbPath = path.join(tempDir, 'output_thumb.jpg');
     await runFfmpeg(
-      buildThumbnailArgs(outputPath, thumbPath, (outputProbe?.duration ?? cutDuration) / 2),
+      buildThumbnailArgs(outputPath, thumbPath, (outputProbe?.duration ?? totalDuration) / 2),
     );
 
     const outputKey = storageKeys.output(jobId, revision);

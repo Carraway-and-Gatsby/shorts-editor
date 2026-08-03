@@ -1,16 +1,17 @@
-"""분석 워커 엔트리포인트: Redis 연결 확인 + HTTP 헬스체크 서버."""
+"""분석 워커 엔트리포인트: BullMQ 소비 + HTTP 헬스체크 서버."""
 
+import asyncio
 import json
 import logging
 import os
 import signal
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import redis
 
 from .health import health_payload
+from .worker import run_worker
 
 logging.basicConfig(level=logging.INFO, format="[worker:analyze] %(message)s")
 log = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 HEALTH_PORT = int(os.environ.get("HEALTH_PORT", "8083"))
 
 _redis_ok = False
-_shutdown = threading.Event()
+_shutdown_flag = threading.Event()
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -41,7 +42,7 @@ class HealthHandler(BaseHTTPRequestHandler):
 
 def _ping_loop(client: "redis.Redis") -> None:
     global _redis_ok
-    while not _shutdown.is_set():
+    while not _shutdown_flag.is_set():
         try:
             client.ping()
             if not _redis_ok:
@@ -51,7 +52,7 @@ def _ping_loop(client: "redis.Redis") -> None:
             if _redis_ok:
                 log.warning("redis connection lost: %s", err)
             _redis_ok = False
-        _shutdown.wait(5)
+        _shutdown_flag.wait(5)
 
 
 def main() -> None:
@@ -61,21 +62,27 @@ def main() -> None:
     threading.Thread(target=server.serve_forever, daemon=True).start()
     log.info("health endpoint on :%d/healthz", HEALTH_PORT)
 
-    ping_thread = threading.Thread(target=_ping_loop, args=(client,), daemon=True)
-    ping_thread.start()
+    threading.Thread(target=_ping_loop, args=(client,), daemon=True).start()
 
-    def handle_signal(_signum, _frame) -> None:
-        _shutdown.set()
+    async def async_main() -> None:
+        shutdown = asyncio.Event()
+        loop = asyncio.get_running_loop()
 
-    signal.signal(signal.SIGTERM, handle_signal)
-    signal.signal(signal.SIGINT, handle_signal)
+        def handle_signal() -> None:
+            _shutdown_flag.set()
+            shutdown.set()
 
-    log.info("analyze worker up (queue consumption arrives in M2)")
-    while not _shutdown.is_set():
-        time.sleep(0.5)
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, handle_signal)
 
-    log.info("shutting down")
-    server.shutdown()
+        await run_worker(shutdown)
+
+    try:
+        asyncio.run(async_main())
+    finally:
+        _shutdown_flag.set()
+        server.shutdown()
+        log.info("stopped")
 
 
 if __name__ == "__main__":

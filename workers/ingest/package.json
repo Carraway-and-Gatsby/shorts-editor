@@ -12,7 +12,8 @@
     "@shorts/media": "workspace:*",
     "@shorts/queue": "workspace:*",
     "@shorts/shared": "workspace:*",
-    "@shorts/storage": "workspace:*"
+    "@shorts/storage": "workspace:*",
+    "yaml": "^2.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

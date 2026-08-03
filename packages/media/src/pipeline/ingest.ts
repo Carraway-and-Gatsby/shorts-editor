@@ -1,18 +1,16 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { buildDefaultComposition } from '@shorts/shared';
 import type { SourceMeta } from '@shorts/db';
 import { downloadToFile, storageKeys, uploadFromFile } from '@shorts/storage';
-import { buildProxyArgs, buildThumbnailArgs } from '../commands.js';
+import { buildAudioExtractArgs, buildProxyArgs, buildThumbnailArgs } from '../commands.js';
 import { probeFile, runFfmpeg } from '../run.js';
 import { validateSource } from '../validate-source.js';
 import type { PipelineDeps, StagePayload } from './deps.js';
 
 /**
  * Ingest 단계 (docs/04-pipeline-spec.md §4.1):
- * 검증 → 메타데이터 기록 → 프록시 → 썸네일 → 기본 컴포지션 생성 → Render enqueue.
- * M1에서는 Analyze가 없으므로 Ingest 완료 후 곧바로 COMPOSING → RENDERING으로 넘어간다.
+ * 검증 → 메타데이터 기록 → 프록시 → STT용 오디오 → 썸네일 → Analyze enqueue.
  */
 export async function processIngestJob(deps: PipelineDeps, payload: StagePayload): Promise<void> {
   const { jobId } = payload;
@@ -61,33 +59,25 @@ export async function processIngestJob(deps: PipelineDeps, payload: StagePayload
     const proxyPath = path.join(tempDir, 'proxy.mp4');
     await runFfmpeg(buildProxyArgs(sourcePath, proxyPath));
     await uploadFromFile(storage, storageKeys.proxy(jobId), proxyPath);
-    await repos.jobs.setProgress(jobId, 'ingest', 8);
+    await repos.jobs.setProgress(jobId, 'ingest', 7);
 
-    // 3. 대표 썸네일 (중간 지점)
+    // 3. STT/에너지 분석용 오디오 (16kHz mono WAV)
+    if (meta.hasAudio) {
+      const audioPath = path.join(tempDir, 'audio.wav');
+      await runFfmpeg(buildAudioExtractArgs(sourcePath, audioPath));
+      await uploadFromFile(storage, storageKeys.audio(jobId), audioPath);
+    }
+    await repos.jobs.setProgress(jobId, 'ingest', 9);
+
+    // 4. 대표 썸네일 (중간 지점)
     const thumbPath = path.join(tempDir, 'thumbnail.jpg');
     await runFfmpeg(buildThumbnailArgs(sourcePath, thumbPath, meta.duration / 2));
     await uploadFromFile(storage, storageKeys.thumbnail(jobId), thumbPath);
     await repos.jobs.setProgress(jobId, 'ingest', 10);
 
-    // 4. 기본 컴포지션 (M1: 분석 없이 시작부터 목표 길이. M2에서 하이라이트 기반으로 대체)
-    const revision = 1;
-    const existing = await repos.jobs.getComposition(jobId, revision);
-    if (!existing) {
-      const composition = buildDefaultComposition({
-        jobId,
-        revision,
-        sourceDuration: meta.duration,
-        sourceFps: meta.fps,
-        targetDuration: job.options.targetDuration,
-        preset: job.options.preset,
-      });
-      await repos.jobs.insertComposition(jobId, revision, composition, 'auto');
-    }
-
-    // 5. 상태 전이 후 렌더링 enqueue (M1: Analyze 단계는 통과 처리)
-    await repos.jobs.transition(jobId, 'ANALYZING', 'COMPOSING', { stage: 'compose', progress: 45 });
-    await repos.jobs.transition(jobId, 'COMPOSING', 'RENDERING', { stage: 'render', progress: 50 });
-    await deps.enqueueRender({ jobId, revision });
+    // 5. 분석 단계로 (상태는 ANALYZING 유지, stage만 갱신)
+    await repos.jobs.setProgress(jobId, 'analyze', 12);
+    await deps.enqueueAnalyze({ jobId, revision: payload.revision });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await repos.jobs.fail(jobId, 'INGEST_FAILED', '영상 준비 중 오류가 발생했습니다.', {

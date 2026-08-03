@@ -116,13 +116,18 @@ services:
       dockerfile: workers/analyze/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgres://shorts:shorts@postgres:5432/shorts
       STORAGE_ROOT: /data/storage
       HEALTH_PORT: 8083
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      WHISPER_CACHE: /models
     volumes:
       - storage:/data/storage
       - models:/models
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     healthcheck:
       test:

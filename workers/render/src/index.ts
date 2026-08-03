@@ -12,6 +12,9 @@ const pool = createPool(DATABASE_URL);
 const deps: PipelineDeps = {
   repos: createPgRepos(pool),
   storage: new LocalFsStorage(STORAGE_ROOT),
+  enqueueAnalyze: async () => {
+    throw new Error('render worker does not enqueue analyze jobs');
+  },
   enqueueRender: async () => {
     throw new Error('render worker does not enqueue render jobs');
   },

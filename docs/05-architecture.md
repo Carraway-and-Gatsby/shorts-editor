@@ -54,6 +54,9 @@
 - **API ↔ Worker**: 큐 메시지는 `{ jobId, stage, revision }` 최소 정보만 전달. 상세 데이터는 DB/스토리지에서 조회 (메시지 비대화 방지).
 - **Worker ↔ Storage**: 단계별 산출물 경로 규약 `jobs/{jobId}/{artifact}` ([4.6](04-pipeline-spec.md#46-중간-산출물artifact-목록) 참조).
 - **상태 전이는 API 서버가 아닌 워커가 소유**: 각 워커는 자기 단계의 시작/완료/실패 시 DB 상태를 갱신하고 다음 단계를 enqueue한다.
+  - 예외: Analyze 워커(Python)는 진행률 갱신과 실패 마킹만 수행하고, `ANALYZING → COMPOSING` 전이는 compose 소비자가 담당한다.
+- **Compose 큐는 ingest 워커 프로세스가 함께 소비한다**: Compose는 경량 데이터 작업이며 컴포지션 스키마/타입이 TypeScript에 있으므로 별도 워커를 두지 않는다. 부하가 늘면 분리한다.
+- **큐 상호운용**: Node(BullMQ)와 Python(bullmq-python)이 같은 Redis 큐 프로토콜을 공유한다. Analyze 워커는 로컬 FS 스토리지 경로를 직접 읽는다 (S3 전환 시 스토리지 클라이언트 계층 추가).
 
 ## 5.4 배포 형태
 

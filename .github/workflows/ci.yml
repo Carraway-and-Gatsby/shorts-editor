@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # 시각 분석 테스트가 ffmpeg로 테스트 영상을 생성한다
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

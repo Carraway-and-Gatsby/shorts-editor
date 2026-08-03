@@ -14,8 +14,8 @@ export interface StageJobContext {
 export interface StageWorkerOptions {
   stage: JobStage;
   redisUrl: string;
-  /** /healthz 엔드포인트를 노출할 포트 */
-  healthPort: number;
+  /** /healthz 엔드포인트를 노출할 포트. 생략 시 헬스 서버를 띄우지 않는다 (한 프로세스가 큐 여러 개를 소비할 때). */
+  healthPort?: number;
   handler: (payload: StageJobPayload, context: StageJobContext) => Promise<void>;
   concurrency?: number;
 }
@@ -52,31 +52,37 @@ export function startStageWorker(options: StageWorkerOptions): StageWorkerRuntim
     console.log(`[worker:${stage}] ready, consuming queue "${QUEUE_NAMES[stage]}"`);
   });
 
-  const server = http.createServer((req, res) => {
-    if (req.url !== '/healthz') {
-      res.writeHead(404).end();
-      return;
-    }
-    const redisOk = connection.status === 'ready';
-    res
-      .writeHead(redisOk ? 200 : 503, { 'content-type': 'application/json' })
-      .end(
-        JSON.stringify({
-          status: redisOk ? 'ok' : 'degraded',
-          stage,
-          redis: redisOk ? 'up' : 'down',
-        }),
-      );
-  });
-  server.listen(healthPort, () => {
-    console.log(`[worker:${stage}] health endpoint on :${healthPort}/healthz`);
-  });
+  let server: http.Server | null = null;
+  if (healthPort !== undefined) {
+    server = http.createServer((req, res) => {
+      if (req.url !== '/healthz') {
+        res.writeHead(404).end();
+        return;
+      }
+      const redisOk = connection.status === 'ready';
+      res
+        .writeHead(redisOk ? 200 : 503, { 'content-type': 'application/json' })
+        .end(
+          JSON.stringify({
+            status: redisOk ? 'ok' : 'degraded',
+            stage,
+            redis: redisOk ? 'up' : 'down',
+          }),
+        );
+    });
+    server.listen(healthPort, () => {
+      console.log(`[worker:${stage}] health endpoint on :${healthPort}/healthz`);
+    });
+  }
 
   return {
     async close(): Promise<void> {
       await worker.close();
       await connection.quit().catch(() => {});
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (server) {
+        const s = server;
+        await new Promise<void>((resolve) => s.close(() => resolve()));
+      }
     },
   };
 }

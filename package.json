@@ -9,7 +9,8 @@
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r run test",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "eval": "node eval/run.mjs"
   },
   "devDependencies": {
     "eslint": "^9.30.0",

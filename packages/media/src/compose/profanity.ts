@@ -10,7 +10,11 @@ function escapeRegExp(value: string): string {
 }
 
 function maskWord(word: string): string {
-  return word[0] + '*'.repeat(Math.max(1, word.length - 1));
+  // 1글자 금칙어는 첫 글자를 남기면 원문이 그대로 노출되므로 전체를 가린다
+  if (word.length <= 1) {
+    return '*';
+  }
+  return word[0] + '*'.repeat(word.length - 1);
 }
 
 export function maskProfanity(text: string, bannedWords: string[]): string {

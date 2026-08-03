@@ -11,6 +11,11 @@ export interface JobOptionsInput {
   preset?: string;
   subtitle?: 'on' | 'off';
   bgm?: string;
+  profanityMask?: 'on' | 'off';
+}
+
+export interface UserInfo {
+  email: string;
 }
 
 export interface JobProgressEvent {
@@ -73,6 +78,7 @@ export interface CompositionView {
     output: { duration: number };
     subtitles: { style: string; blocks: SubtitleBlock[] };
     style: { preset: string };
+    audio: { bgm: { trackId: string } | null };
   };
   hasDraft: boolean;
   analysisSummary: {
@@ -186,9 +192,33 @@ export function getComposition(jobId: string): Promise<CompositionView> {
 
 export function patchComposition(
   jobId: string,
-  patch: { cuts?: Cut[]; subtitles?: { blocks: SubtitleBlock[] } },
+  patch: {
+    cuts?: Cut[];
+    subtitles?: { blocks: SubtitleBlock[] };
+    style?: { preset: string };
+    audio?: { bgm: string };
+  },
 ): Promise<CompositionView> {
   return request(`/api/v1/jobs/${jobId}/composition`, jsonInit('PATCH', patch));
+}
+
+export function getMe(): Promise<{ user: UserInfo | null }> {
+  return request('/api/v1/auth/me');
+}
+
+export function signup(email: string, password: string): Promise<{ user: UserInfo }> {
+  return request('/api/v1/auth/signup', jsonInit('POST', { email, password }));
+}
+
+export function login(email: string, password: string): Promise<{ user: UserInfo }> {
+  return request('/api/v1/auth/login', jsonInit('POST', { email, password }));
+}
+
+export async function logout(): Promise<void> {
+  const res = await fetch('/api/v1/auth/logout', { method: 'POST' });
+  if (!res.ok) {
+    throw new Error(await parseError(res));
+  }
 }
 
 export function startRender(jobId: string): Promise<{ revision: number }> {

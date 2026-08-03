@@ -3,6 +3,7 @@ import type pg from 'pg';
 import type {
   CreateJobInput,
   JobListPage,
+  JobOwner,
   JobRow,
   OutputRow,
   Repos,
@@ -11,6 +12,7 @@ import type {
   SttCorrectionInput,
   UploadRow,
   UploadStatus,
+  UserRow,
 } from './types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29,10 +31,20 @@ function mapUpload(row: any): UploadRow {
   };
 }
 
+function mapUser(row: any): UserRow {
+  return {
+    id: row.id,
+    email: row.email,
+    passwordHash: row.password_hash,
+    createdAt: row.created_at,
+  };
+}
+
 function mapJob(row: any): JobRow {
   return {
     id: row.id,
     sessionId: row.session_id,
+    userId: row.user_id ?? null,
     status: row.status,
     stage: row.stage,
     progress: row.progress,
@@ -68,17 +80,43 @@ export function createPgRepos(pool: pg.Pool): Repos {
     sessions: {
       async find(id: string): Promise<SessionRow | null> {
         const { rows } = await pool.query(
-          'UPDATE sessions SET last_seen_at = now() WHERE id = $1 RETURNING id, created_at',
+          'UPDATE sessions SET last_seen_at = now() WHERE id = $1 RETURNING id, user_id, created_at',
           [id],
         );
-        return rows[0] ? { id: rows[0].id, createdAt: rows[0].created_at } : null;
+        return rows[0]
+          ? { id: rows[0].id, userId: rows[0].user_id ?? null, createdAt: rows[0].created_at }
+          : null;
       },
       async create(id: string): Promise<SessionRow> {
         const { rows } = await pool.query(
-          'INSERT INTO sessions (id) VALUES ($1) RETURNING id, created_at',
+          'INSERT INTO sessions (id) VALUES ($1) RETURNING id, user_id, created_at',
           [id],
         );
-        return { id: rows[0].id, createdAt: rows[0].created_at };
+        return { id: rows[0].id, userId: null, createdAt: rows[0].created_at };
+      },
+      async attachUser(id: string, userId: string | null): Promise<void> {
+        await pool.query('UPDATE sessions SET user_id = $2, last_seen_at = now() WHERE id = $1', [
+          id,
+          userId,
+        ]);
+      },
+    },
+
+    users: {
+      async create(input): Promise<UserRow> {
+        const { rows } = await pool.query(
+          'INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3) RETURNING *',
+          [input.id, input.email, input.passwordHash],
+        );
+        return mapUser(rows[0]);
+      },
+      async findByEmail(email: string): Promise<UserRow | null> {
+        const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+        return rows[0] ? mapUser(rows[0]) : null;
+      },
+      async findById(id: string): Promise<UserRow | null> {
+        const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+        return rows[0] ? mapUser(rows[0]) : null;
       },
     },
 
@@ -111,9 +149,16 @@ export function createPgRepos(pool: pg.Pool): Repos {
     jobs: {
       async create(input: CreateJobInput): Promise<JobRow> {
         const { rows } = await pool.query(
-          `INSERT INTO jobs (id, session_id, status, options, source_ext, expires_at)
-           VALUES ($1, $2, 'QUEUED', $3, $4, $5) RETURNING *`,
-          [input.id, input.sessionId, JSON.stringify(input.options), input.sourceExt, input.expiresAt],
+          `INSERT INTO jobs (id, session_id, user_id, status, options, source_ext, expires_at)
+           VALUES ($1, $2, $3, 'QUEUED', $4, $5, $6) RETURNING *`,
+          [
+            input.id,
+            input.sessionId,
+            input.userId ?? null,
+            JSON.stringify(input.options),
+            input.sourceExt,
+            input.expiresAt,
+          ],
         );
         return mapJob(rows[0]);
       },
@@ -121,17 +166,22 @@ export function createPgRepos(pool: pg.Pool): Repos {
         const { rows } = await pool.query('SELECT * FROM jobs WHERE id = $1', [id]);
         return rows[0] ? mapJob(rows[0]) : null;
       },
-      async listBySession(sessionId: string, limit: number, cursor?: string): Promise<JobListPage> {
-        const params: unknown[] = [sessionId, limit + 1];
+      async listByOwner(owner: JobOwner, limit: number, cursor?: string): Promise<JobListPage> {
+        // 로그인 시 계정 전체 + 현재 세션의 익명 잡, 익명이면 현재 세션만
+        const ownerClause = owner.userId
+          ? '(session_id = $1 OR user_id = $2)'
+          : 'session_id = $1';
+        const params: unknown[] = owner.userId ? [owner.sessionId, owner.userId] : [owner.sessionId];
+        params.push(limit + 1);
+        const limitIndex = params.length;
         let cursorClause = '';
         if (cursor) {
-          cursorClause =
-            'AND (created_at, id) < (SELECT created_at, id FROM jobs WHERE id = $3)';
           params.push(cursor);
+          cursorClause = `AND (created_at, id) < (SELECT created_at, id FROM jobs WHERE id = $${params.length})`;
         }
         const { rows } = await pool.query(
-          `SELECT * FROM jobs WHERE session_id = $1 ${cursorClause}
-           ORDER BY created_at DESC, id DESC LIMIT $2`,
+          `SELECT * FROM jobs WHERE ${ownerClause} ${cursorClause}
+           ORDER BY created_at DESC, id DESC LIMIT $${limitIndex}`,
           params,
         );
         const jobs = rows.map(mapJob);
@@ -140,6 +190,13 @@ export function createPgRepos(pool: pg.Pool): Repos {
           jobs: hasMore ? jobs.slice(0, limit) : jobs,
           nextCursor: hasMore ? jobs[limit - 1].id : null,
         };
+      },
+      async mergeSessionToUser(sessionId: string, userId: string): Promise<number> {
+        const { rowCount } = await pool.query(
+          'UPDATE jobs SET user_id = $2, updated_at = now() WHERE session_id = $1 AND user_id IS NULL',
+          [sessionId, userId],
+        );
+        return rowCount ?? 0;
       },
       async transition(
         id: string,

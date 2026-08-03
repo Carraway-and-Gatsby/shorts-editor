@@ -1,11 +1,15 @@
 """analyze_job 오케스트레이션 검증 (STT는 페이크 주입)"""
 
 import json
+import wave
+from pathlib import Path
 
+import numpy as np
 import pytest
 
 from analyze_worker.analyze import analyze_job, write_analysis
-from analyze_worker.paths import analysis_path, audio_path
+from analyze_worker.keys import analysis_key, audio_key
+from analyze_worker.storage import LocalStorage
 
 
 def fake_transcriber(_audio_file, _language):
@@ -25,33 +29,36 @@ def fake_transcriber(_audio_file, _language):
     }
 
 
-def test_analyze_without_audio_marks_warning(job_storage: str):
-    doc = analyze_job(job_storage, transcriber=fake_transcriber)
+def put_wav(storage: LocalStorage, job_id: str, samples: np.ndarray) -> None:
+    path = storage.root / audio_key(job_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes((np.clip(samples, -1, 1) * 32767).astype("int16").tobytes())
+
+
+def test_analyze_without_audio_marks_warning(job_storage: tuple[str, LocalStorage]):
+    job_id, storage = job_storage
+    doc = analyze_job(job_id, transcriber=fake_transcriber, storage=storage)
 
     assert doc["version"] == 1
-    assert doc["jobId"] == job_storage
+    assert doc["jobId"] == job_id
     assert doc["source"]["hasAudio"] is False
     assert doc["transcript"] is None
     assert "stt_skipped_no_audio" in doc["warnings"]
     assert len(doc["shots"]) >= 1
 
 
-def test_analyze_with_audio_uses_transcriber(job_storage: str, tmp_path):
-    # 무음 WAV를 오디오 산출물로 배치
-    import wave
-
-    import numpy as np
-
-    wav_path = audio_path(job_storage)
-    samples = (0.2 * np.sin(np.linspace(0, 2 * np.pi * 440, 16000))).astype(np.float64)
-    with wave.open(str(wav_path), "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)
-        wav.setframerate(16000)
-        wav.writeframes((samples * 32767).astype("int16").tobytes())
+def test_analyze_with_audio_uses_transcriber(job_storage: tuple[str, LocalStorage]):
+    job_id, storage = job_storage
+    put_wav(storage, job_id, 0.2 * np.sin(np.linspace(0, 2 * np.pi * 440, 16000)))
 
     progress_calls: list[int] = []
-    doc = analyze_job(job_storage, progress=progress_calls.append, transcriber=fake_transcriber)
+    doc = analyze_job(
+        job_id, progress=progress_calls.append, transcriber=fake_transcriber, storage=storage
+    )
 
     assert doc["source"]["hasAudio"] is True
     assert doc["transcript"]["language"] == "ko"
@@ -59,29 +66,21 @@ def test_analyze_with_audio_uses_transcriber(job_storage: str, tmp_path):
     assert len(doc["energy"]) > 0
     assert progress_calls == sorted(progress_calls)
 
-    path = write_analysis(job_storage, doc)
-    assert path == analysis_path(job_storage)
-    reparsed = json.loads(path.read_text())
-    assert reparsed["jobId"] == job_storage
+    key = write_analysis(job_id, doc, storage=storage)
+    assert key == analysis_key(job_id)
+    reparsed = json.loads((storage.root / key).read_text())
+    assert reparsed["jobId"] == job_id
 
 
-def test_stt_failure_becomes_warning(job_storage: str):
-    wav_path = audio_path(job_storage)
-    wav_path.parent.mkdir(parents=True, exist_ok=True)
-    # 최소 길이 무음 WAV
-    import wave
+def test_stt_failure_becomes_warning(job_storage: tuple[str, LocalStorage]):
+    job_id, storage = job_storage
+    put_wav(storage, job_id, np.zeros(16000))
 
-    with wave.open(str(wav_path), "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)
-        wav.setframerate(16000)
-        wav.writeframes(b"\x00\x00" * 16000)
-
-    doc = analyze_job(job_storage, transcriber=lambda _a, _b: None)
+    doc = analyze_job(job_id, transcriber=lambda _a, _b: None, storage=storage)
     assert doc["transcript"] is None
     assert "stt_failed" in doc["warnings"]
 
 
-def test_missing_proxy_raises(job_storage: str, monkeypatch: pytest.MonkeyPatch):
+def test_missing_proxy_raises(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
-        analyze_job("job_nonexistent", transcriber=fake_transcriber)
+        analyze_job("job_nonexistent", transcriber=fake_transcriber, storage=LocalStorage(tmp_path))

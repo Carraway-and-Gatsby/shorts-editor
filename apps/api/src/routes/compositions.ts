@@ -3,6 +3,7 @@ import { isAnalysisDoc, type AnalysisDoc, type Composition } from '@shorts/share
 import { storageKeys } from '@shorts/storage';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../deps.js';
+import { canAccessJob } from '../lib/access.js';
 import { apiError } from '../lib/errors.js';
 
 async function loadAnalysis(deps: AppDeps, jobId: string): Promise<AnalysisDoc | null> {
@@ -34,7 +35,7 @@ export function registerCompositionRoutes(app: FastifyInstance, deps: AppDeps): 
   // 현재 컴포지션 조회 (드래프트 우선) + 타임라인 UI용 분석 요약
   app.get<{ Params: { id: string } }>('/api/v1/jobs/:id/composition', async (req, reply) => {
     const job = await repos.jobs.find(req.params.id);
-    if (!job || job.sessionId !== req.sessionId) {
+    if (!job || !canAccessJob(job, req)) {
       return apiError(reply, 404, 'NOT_FOUND', '잡을 찾을 수 없습니다.');
     }
     const composition = await currentComposition(deps, job.id);
@@ -61,7 +62,7 @@ export function registerCompositionRoutes(app: FastifyInstance, deps: AppDeps): 
   // 컴포지션 보정 → 드래프트 저장 (리비전 미증가)
   app.patch<{ Params: { id: string } }>('/api/v1/jobs/:id/composition', async (req, reply) => {
     const job = await repos.jobs.find(req.params.id);
-    if (!job || job.sessionId !== req.sessionId) {
+    if (!job || !canAccessJob(job, req)) {
       return apiError(reply, 404, 'NOT_FOUND', '잡을 찾을 수 없습니다.');
     }
     if (job.status !== 'DONE') {
@@ -73,11 +74,12 @@ export function registerCompositionRoutes(app: FastifyInstance, deps: AppDeps): 
     }
 
     const analysis = await loadAnalysis(deps, job.id);
-    const result = applyCompositionPatch(
-      base,
-      (req.body ?? {}) as CompositionPatchInput,
-      analysis?.transcript ?? null,
-    );
+    const result = applyCompositionPatch(base, (req.body ?? {}) as CompositionPatchInput, {
+      analysis,
+      presets: Object.fromEntries(deps.presetCatalog.map((p) => [p.id, p])),
+      bgmCatalog: deps.bgmCatalog,
+      hasAudio: job.sourceMeta?.hasAudio,
+    });
     if (!result.ok) {
       return apiError(reply, 400, 'VALIDATION_ERROR', result.errors.join('; '));
     }
@@ -92,7 +94,7 @@ export function registerCompositionRoutes(app: FastifyInstance, deps: AppDeps): 
   // 재렌더링 (F-24): 드래프트(없으면 현재 컴포지션)를 새 리비전으로 확정하고 렌더만 재실행
   app.post<{ Params: { id: string } }>('/api/v1/jobs/:id/render', async (req, reply) => {
     const job = await repos.jobs.find(req.params.id);
-    if (!job || job.sessionId !== req.sessionId) {
+    if (!job || !canAccessJob(job, req)) {
       return apiError(reply, 404, 'NOT_FOUND', '잡을 찾을 수 없습니다.');
     }
     if (job.status !== 'DONE') {
@@ -123,7 +125,7 @@ export function registerCompositionRoutes(app: FastifyInstance, deps: AppDeps): 
   // 리비전 이력 (최근 5개 보관, docs/06-api-spec.md §6.5)
   app.get<{ Params: { id: string } }>('/api/v1/jobs/:id/revisions', async (req, reply) => {
     const job = await repos.jobs.find(req.params.id);
-    if (!job || job.sessionId !== req.sessionId) {
+    if (!job || !canAccessJob(job, req)) {
       return apiError(reply, 404, 'NOT_FOUND', '잡을 찾을 수 없습니다.');
     }
     const outputs = await repos.jobs.listOutputs(job.id);

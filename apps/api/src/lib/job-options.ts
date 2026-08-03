@@ -34,6 +34,7 @@ export function parseJobOptions(input: unknown): JobOptionsValidation {
       bgm: str(raw.bgm, 'auto'),
       reframe,
       language: str(raw.language, 'auto'),
+      profanityMask: raw.profanityMask === 'on' ? 'on' : 'off',
     },
   };
 }

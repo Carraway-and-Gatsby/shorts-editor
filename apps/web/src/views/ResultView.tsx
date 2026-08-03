@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  getBgmTracks,
   getComposition,
   getDownloadUrl,
+  getPresets,
   getRevisions,
   patchComposition,
   startRender,
+  type BgmTrackInfo,
   type CompositionView,
   type Cut,
+  type PresetInfo,
   type RevisionInfo,
   type SubtitleBlock,
 } from '../api';
@@ -30,6 +34,10 @@ export function ResultView({ jobId, onRerender, onError }: Props) {
   const [selectedRevision, setSelectedRevision] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [presets, setPresets] = useState<PresetInfo[]>([]);
+  const [bgmTracks, setBgmTracks] = useState<BgmTrackInfo[]>([]);
+  const [presetChoice, setPresetChoice] = useState('clean');
+  const [bgmChoice, setBgmChoice] = useState('auto');
 
   const load = useCallback(async () => {
     try {
@@ -42,6 +50,8 @@ export function ResultView({ jobId, onRerender, onError }: Props) {
       setView(composition);
       setCuts(composition.composition.cuts);
       setBlocks(composition.composition.subtitles.blocks);
+      setPresetChoice(composition.composition.style.preset);
+      setBgmChoice(composition.composition.audio.bgm?.trackId ?? 'off');
       setRevisions(revisionList);
       setSelectedRevision(revisionList[0]?.revision ?? null);
       setDirty(composition.hasDraft);
@@ -52,7 +62,27 @@ export function ResultView({ jobId, onRerender, onError }: Props) {
 
   useEffect(() => {
     void load();
+    getPresets().then(setPresets).catch(() => {});
+    getBgmTracks().then(setBgmTracks).catch(() => {});
   }, [load]);
+
+  const applyStyle = async () => {
+    try {
+      setBusy(true);
+      const updated = await patchComposition(jobId, {
+        style: { preset: presetChoice },
+        audio: { bgm: bgmChoice },
+      });
+      setView(updated);
+      setBlocks(updated.composition.subtitles.blocks);
+      setBgmChoice(updated.composition.audio.bgm?.trackId ?? 'off');
+      setDirty(true);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const selectRevision = async (revision: number) => {
     try {
@@ -181,6 +211,38 @@ export function ResultView({ jobId, onRerender, onError }: Props) {
             </PrimaryButton>
           </p>
         )}
+      </Panel>
+
+      <Panel title="스타일 교체">
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <label>
+            프리셋{' '}
+            <select value={presetChoice} onChange={(e) => setPresetChoice(e.target.value)}>
+              {(presets.length > 0 ? presets : [{ id: presetChoice, name: presetChoice } as PresetInfo]).map(
+                (p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+          <label>
+            BGM{' '}
+            <select value={bgmChoice} onChange={(e) => setBgmChoice(e.target.value)}>
+              <option value="off">사용 안 함</option>
+              <option value="auto">자동 선택</option>
+              {bgmTracks.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <PrimaryButton onClick={() => void applyStyle()} disabled={busy}>
+            스타일 적용
+          </PrimaryButton>
+        </div>
       </Panel>
 
       <Panel title="다시 만들기">

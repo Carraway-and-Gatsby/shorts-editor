@@ -50,6 +50,7 @@ export async function processComposeJob(deps: PipelineDeps, payload: StagePayloa
             scoring: deps.scoring,
             presets: deps.presets,
             bgmCatalog: deps.bgmCatalog,
+            bannedWords: deps.bannedWords,
           })
         : buildDefaultComposition({
             jobId,

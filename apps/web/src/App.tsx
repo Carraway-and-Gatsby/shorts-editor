@@ -1,5 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { getMe, logout, type UserInfo } from './api';
 import { Panel } from './ui';
+import { AuthView } from './views/AuthView';
 import { HistoryView } from './views/HistoryView';
 import { ProcessingView } from './views/ProcessingView';
 import { ResultView } from './views/ResultView';
@@ -8,14 +10,28 @@ import { UploadView } from './views/UploadView';
 type View =
   | { name: 'home' }
   | { name: 'history' }
+  | { name: 'auth' }
   | { name: 'processing'; jobId: string }
   | { name: 'result'; jobId: string }
   | { name: 'error'; message: string };
 
 export function App() {
   const [view, setView] = useState<View>({ name: 'home' });
+  const [user, setUser] = useState<UserInfo | null>(null);
+
+  useEffect(() => {
+    getMe()
+      .then((r) => setUser(r.user))
+      .catch(() => {});
+  }, []);
 
   const showError = useCallback((message: string) => setView({ name: 'error', message }), []);
+
+  const handleLogout = async () => {
+    await logout().catch(() => {});
+    setUser(null);
+    setView({ name: 'home' });
+  };
 
   const navButton = (label: string, target: View, active: boolean) => (
     <button
@@ -43,9 +59,19 @@ export function App() {
     >
       <header style={{ display: 'flex', alignItems: 'baseline', gap: '1rem', flexWrap: 'wrap' }}>
         <h1 style={{ marginBottom: 0 }}>Shorts Editor</h1>
-        <nav style={{ display: 'flex', gap: '0.5rem' }}>
+        <nav style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
           {navButton('새로 만들기', { name: 'home' }, view.name === 'home')}
           {navButton('내 작업', { name: 'history' }, view.name === 'history')}
+          {user ? (
+            <span style={{ fontSize: 13, color: '#475569' }}>
+              {user.email}{' '}
+              <button onClick={() => void handleLogout()} style={{ marginLeft: 4 }}>
+                로그아웃
+              </button>
+            </span>
+          ) : (
+            navButton('로그인', { name: 'auth' }, view.name === 'auth')
+          )}
         </nav>
       </header>
       <p style={{ color: '#475569' }}>
@@ -56,6 +82,17 @@ export function App() {
         <UploadView
           onJobCreated={(jobId) => setView({ name: 'processing', jobId })}
           onError={showError}
+        />
+      )}
+
+      {view.name === 'auth' && (
+        <AuthView
+          onAuthed={() => {
+            getMe()
+              .then((r) => setUser(r.user))
+              .catch(() => {});
+            setView({ name: 'history' });
+          }}
         />
       )}
 

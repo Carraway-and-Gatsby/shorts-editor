@@ -23,8 +23,19 @@ Preset, BgmTrack : 전역 카탈로그 (잡과 N:1 참조)
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
 | id | text PK | `ses_…` |
-| user_id | text NULL | v2 계정 연동 시 사용 |
+| user_id | text NULL | 로그인된 계정 (익명이면 NULL) |
 | created_at / last_seen_at | timestamptz | |
+
+### `users` (v2, F-42)
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | text PK | `usr_…` |
+| email | text UNIQUE | 소문자 정규화 저장 |
+| password_hash | text | scrypt(salt.hash) |
+| created_at | timestamptz | |
+
+> 잡의 계정 귀속은 `jobs.user_id`로 관리한다. 가입/로그인 시 현재 세션의
+> 무소속(user_id IS NULL) 잡이 계정으로 병합된다 (익명 이력 병합).
 
 ### `jobs`
 | 컬럼 | 타입 | 설명 |

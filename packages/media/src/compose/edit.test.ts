@@ -1,7 +1,7 @@
 import type { Composition, Transcript } from '@shorts/shared';
 import { describe, expect, it } from 'vitest';
 import { applyCompositionPatch } from './edit.js';
-import { makeSpeechSegment } from './fixtures.js';
+import { makeAnalysis, makeSpeechSegment } from './fixtures.js';
 
 function baseComposition(): Composition {
   return {
@@ -35,7 +35,7 @@ describe('applyCompositionPatch', () => {
           ],
         },
       },
-      null,
+      { analysis: null },
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -54,7 +54,7 @@ describe('applyCompositionPatch', () => {
     const result = applyCompositionPatch(
       baseComposition(),
       { cuts: [{ id: 'c1', sourceStart: 40, sourceEnd: 50, transition: 'cut' }] },
-      transcript,
+      { analysis: makeAnalysis({ transcript }) },
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -69,7 +69,7 @@ describe('applyCompositionPatch', () => {
     const result = applyCompositionPatch(
       baseComposition(),
       { cuts: [{ id: 'c1', sourceStart: 0, sourceEnd: 120, transition: 'cut' }] },
-      null,
+      { analysis: null },
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -87,15 +87,15 @@ describe('applyCompositionPatch', () => {
             { id: 'c2', sourceStart: 10, sourceEnd: 25, transition: 'cut' },
           ],
         },
-        null,
+        { analysis: null },
       ).ok,
     ).toBe(false);
-    expect(applyCompositionPatch(baseComposition(), { cuts: [] }, null).ok).toBe(false);
+    expect(applyCompositionPatch(baseComposition(), { cuts: [] }, { analysis: null }).ok).toBe(false);
     expect(
-      applyCompositionPatch(baseComposition(), { cuts: [{ sourceStart: 'x' }] }, null).ok,
+      applyCompositionPatch(baseComposition(), { cuts: [{ sourceStart: 'x' }] }, { analysis: null }).ok,
     ).toBe(false);
     expect(
-      applyCompositionPatch(baseComposition(), { subtitles: { blocks: [{ id: 's1' }] } }, null).ok,
+      applyCompositionPatch(baseComposition(), { subtitles: { blocks: [{ id: 's1' }] } }, { analysis: null }).ok,
     ).toBe(false);
   });
 
@@ -103,12 +103,111 @@ describe('applyCompositionPatch', () => {
     const result = applyCompositionPatch(
       baseComposition(),
       { cuts: [{ id: 'c1', sourceStart: 10, sourceEnd: 25, transition: 'cut' }] },
-      null,
+      { analysis: null },
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.composition.subtitles.blocks).toHaveLength(2);
       expect(result.composition.output.duration).toBe(15);
     }
+  });
+});
+
+describe('applyCompositionPatch — style swap (F-23)', () => {
+  const CATALOG = [
+    {
+      id: 'bgm_calm_01',
+      name: 'Calm',
+      moods: ['calm'],
+      durationSeconds: 24,
+      file: 'a.m4a',
+      licenseNote: 'CC0',
+    },
+    {
+      id: 'bgm_energetic_01',
+      name: 'Energetic',
+      moods: ['energetic'],
+      durationSeconds: 24,
+      file: 'b.m4a',
+      licenseNote: 'CC0',
+    },
+  ];
+
+  it('swaps the preset and re-evaluates the title card', () => {
+    const analysis = makeAnalysis({
+      transcript: { language: 'ko', segments: [makeSpeechSegment(0, 3, '제품 소개 영상입니다')] },
+    });
+    const result = applyCompositionPatch(
+      baseComposition(),
+      { style: { preset: 'promo' } },
+      { analysis },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.composition.style.preset).toBe('promo');
+      expect(result.composition.subtitles.style).toBe('promo');
+      // promo는 타이틀 카드 사용 → STT 첫 문장 파생
+      expect(result.composition.style.titleCard).toContain('제품 소개');
+    }
+    // clean으로 되돌리면 타이틀 카드 제거
+    if (result.ok) {
+      const back = applyCompositionPatch(
+        result.composition,
+        { style: { preset: 'clean' } },
+        { analysis },
+      );
+      expect(back.ok).toBe(true);
+      if (back.ok) {
+        expect(back.composition.style.titleCard).toBeNull();
+      }
+    }
+  });
+
+  it('rejects unknown presets', () => {
+    const result = applyCompositionPatch(
+      baseComposition(),
+      { style: { preset: 'nonexistent' } },
+      { analysis: null },
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('swaps bgm on/off/track', () => {
+    const off = applyCompositionPatch(
+      baseComposition(),
+      { audio: { bgm: 'off' } },
+      { analysis: null, bgmCatalog: CATALOG, hasAudio: true },
+    );
+    expect(off.ok && off.composition.audio.bgm === null).toBe(true);
+
+    const explicit = applyCompositionPatch(
+      baseComposition(),
+      { audio: { bgm: 'bgm_energetic_01' } },
+      { analysis: null, bgmCatalog: CATALOG, hasAudio: true },
+    );
+    expect(explicit.ok).toBe(true);
+    if (explicit.ok) {
+      expect(explicit.composition.audio.bgm?.trackId).toBe('bgm_energetic_01');
+      expect(explicit.composition.audio.bgm?.gainDb).toBe(-18);
+    }
+
+    const auto = applyCompositionPatch(
+      baseComposition(),
+      { audio: { bgm: 'auto' } },
+      { analysis: null, bgmCatalog: CATALOG, hasAudio: false },
+    );
+    expect(auto.ok).toBe(true);
+    if (auto.ok) {
+      // clean 프리셋 무드 calm → calm 트랙, 무음이므로 -8dB
+      expect(auto.composition.audio.bgm?.trackId).toBe('bgm_calm_01');
+      expect(auto.composition.audio.bgm?.gainDb).toBe(-8);
+    }
+
+    const unknown = applyCompositionPatch(
+      baseComposition(),
+      { audio: { bgm: 'bgm_missing' } },
+      { analysis: null, bgmCatalog: CATALOG },
+    );
+    expect(unknown.ok).toBe(false);
   });
 });

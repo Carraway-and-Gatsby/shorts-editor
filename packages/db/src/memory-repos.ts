@@ -2,6 +2,7 @@ import { canTransition, TERMINAL_STATUSES, type Composition, type JobStage, type
 import type {
   CreateJobInput,
   JobListPage,
+  JobOwner,
   JobRow,
   OutputRow,
   Repos,
@@ -10,6 +11,7 @@ import type {
   SttCorrectionInput,
   UploadRow,
   UploadStatus,
+  UserRow,
 } from './types.js';
 
 /**
@@ -24,6 +26,7 @@ export function createMemoryRepos(): Repos & {
   };
 } {
   const sessions = new Map<string, SessionRow>();
+  const users = new Map<string, UserRow>();
   const uploads = new Map<string, UploadRow>();
   const jobs = new Map<string, JobRow>();
   const compositions = new Map<string, Composition>();
@@ -42,9 +45,32 @@ export function createMemoryRepos(): Repos & {
         return sessions.get(id) ?? null;
       },
       async create(id: string): Promise<SessionRow> {
-        const row: SessionRow = { id, createdAt: new Date() };
+        const row: SessionRow = { id, userId: null, createdAt: new Date() };
         sessions.set(id, row);
         return row;
+      },
+      async attachUser(id: string, userId: string | null): Promise<void> {
+        const row = sessions.get(id);
+        if (row) {
+          sessions.set(id, { ...row, userId });
+        }
+      },
+    },
+
+    users: {
+      async create(input): Promise<UserRow> {
+        if ([...users.values()].some((u) => u.email === input.email)) {
+          throw new Error(`duplicate email: ${input.email}`);
+        }
+        const row: UserRow = { ...input, createdAt: new Date() };
+        users.set(input.id, row);
+        return row;
+      },
+      async findByEmail(email: string): Promise<UserRow | null> {
+        return [...users.values()].find((u) => u.email === email) ?? null;
+      },
+      async findById(id: string): Promise<UserRow | null> {
+        return users.get(id) ?? null;
       },
     },
 
@@ -71,6 +97,7 @@ export function createMemoryRepos(): Repos & {
         const row: JobRow = {
           id: input.id,
           sessionId: input.sessionId,
+          userId: input.userId ?? null,
           status: 'QUEUED',
           stage: null,
           progress: 0,
@@ -90,9 +117,13 @@ export function createMemoryRepos(): Repos & {
       async find(id: string): Promise<JobRow | null> {
         return jobs.get(id) ?? null;
       },
-      async listBySession(sessionId: string, limit: number, cursor?: string): Promise<JobListPage> {
+      async listByOwner(owner: JobOwner, limit: number, cursor?: string): Promise<JobListPage> {
         let list = [...jobs.values()]
-          .filter((j) => j.sessionId === sessionId)
+          .filter((j) =>
+            owner.userId
+              ? j.sessionId === owner.sessionId || j.userId === owner.userId
+              : j.sessionId === owner.sessionId,
+          )
           .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1));
         if (cursor) {
           const index = list.findIndex((j) => j.id === cursor);
@@ -103,6 +134,16 @@ export function createMemoryRepos(): Repos & {
           jobs: page,
           nextCursor: list.length > limit ? page[page.length - 1].id : null,
         };
+      },
+      async mergeSessionToUser(sessionId: string, userId: string): Promise<number> {
+        let merged = 0;
+        for (const [id, job] of jobs) {
+          if (job.sessionId === sessionId && job.userId === null) {
+            jobs.set(id, { ...job, userId, updatedAt: new Date() });
+            merged++;
+          }
+        }
+        return merged;
       },
       async transition(
         id: string,

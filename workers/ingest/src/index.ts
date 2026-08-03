@@ -4,6 +4,7 @@ import { createPgRepos, createPool } from '@shorts/db';
 import {
   loadBgmCatalog,
   loadPresetCatalog,
+  parseBannedWords,
   presetsById,
   processComposeJob,
   processIngestJob,
@@ -11,15 +12,23 @@ import {
   type ScoringConfig,
 } from '@shorts/media';
 import { BullStageQueue, startStageWorker } from '@shorts/queue';
-import { LocalFsStorage } from '@shorts/storage';
+import { storageFromEnv } from '@shorts/storage';
 import { parse as parseYaml } from 'yaml';
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://shorts:shorts@localhost:5432/shorts';
-const STORAGE_ROOT = process.env.STORAGE_ROOT ?? './storage-data';
 const SCORING_CONFIG_PATH = process.env.SCORING_CONFIG ?? './config/scoring.yaml';
 const PRESETS_DIR = process.env.PRESETS_DIR ?? './config/presets';
 const BGM_CATALOG = process.env.BGM_CATALOG ?? './assets/bgm/catalog.json';
+const BANNED_WORDS = process.env.BANNED_WORDS ?? './config/banned-words.json';
+
+function loadBannedWords(): string[] {
+  try {
+    return parseBannedWords(fs.readFileSync(path.resolve(BANNED_WORDS), 'utf8'));
+  } catch {
+    return [];
+  }
+}
 
 function loadScoringConfig(): ScoringConfig | undefined {
   try {
@@ -40,13 +49,14 @@ const queue = new BullStageQueue(REDIS_URL);
 
 const deps: PipelineDeps = {
   repos: createPgRepos(pool),
-  storage: new LocalFsStorage(STORAGE_ROOT),
+  storage: storageFromEnv(),
   enqueueAnalyze: (payload) => queue.enqueue('analyze', payload),
   // 렌더 실패는 1회 자동 재시도 (docs/04-pipeline-spec.md §4.4)
   enqueueRender: (payload) => queue.enqueue('render', payload, { attempts: 2 }),
   scoring: loadScoringConfig(),
   presets: presetsById(loadPresetCatalog(PRESETS_DIR)),
   bgmCatalog: loadBgmCatalog(BGM_CATALOG),
+  bannedWords: loadBannedWords(),
 };
 
 // 이 프로세스는 ingest와 compose 두 큐를 소비한다 (compose는 경량 데이터 작업)
@@ -55,6 +65,7 @@ const ingestRuntime = startStageWorker({
   redisUrl: REDIS_URL,
   healthPort: Number(process.env.HEALTH_PORT ?? 8081),
   handler: (payload) => processIngestJob(deps, payload),
+  concurrency: Number(process.env.WORKER_CONCURRENCY ?? 1),
 });
 const composeRuntime = startStageWorker({
   stage: 'compose',

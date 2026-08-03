@@ -126,6 +126,7 @@ export function registerUploadRoutes(app: FastifyInstance, deps: AppDeps): void 
     const job = await repos.jobs.create({
       id: jobId,
       sessionId: req.sessionId,
+      userId: req.userId,
       options: optionsResult.options,
       sourceExt: ext,
       expiresAt: new Date(Date.now() + JOB_RETENTION_DAYS * 24 * 3600 * 1000),

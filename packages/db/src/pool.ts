@@ -10,6 +10,6 @@ export function createPool(connectionString: string): pg.Pool {
 }
 
 /** 접두사 있는 불투명 ID 생성 (예: job_x1y2z3…) */
-export function newId(prefix: 'ses' | 'up' | 'job'): string {
+export function newId(prefix: 'ses' | 'up' | 'job' | 'usr'): string {
   return `${prefix}_${randomBytes(9).toString('base64url')}`;
 }

@@ -1,6 +1,7 @@
 import type { JobRow, OutputRow } from '@shorts/db';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../deps.js';
+import { canAccessJob } from '../lib/access.js';
 import { apiError } from '../lib/errors.js';
 
 const DOWNLOAD_TTL_HOURS = 24;
@@ -63,7 +64,11 @@ export function registerJobRoutes(app: FastifyInstance, deps: AppDeps): void {
     '/api/v1/jobs',
     async (req, reply) => {
       const limit = Math.min(50, Math.max(1, Number(req.query.limit ?? 20) || 20));
-      const page = await repos.jobs.listBySession(req.sessionId, limit, req.query.cursor);
+      const page = await repos.jobs.listByOwner(
+        { sessionId: req.sessionId, userId: req.userId },
+        limit,
+        req.query.cursor,
+      );
       const items = await Promise.all(
         page.jobs.map(async (job) => {
           const output =
@@ -91,7 +96,7 @@ export function registerJobRoutes(app: FastifyInstance, deps: AppDeps): void {
   // 잡 상세 (F-40)
   app.get<{ Params: { id: string } }>('/api/v1/jobs/:id', async (req, reply) => {
     const job = await repos.jobs.find(req.params.id);
-    if (!job || job.sessionId !== req.sessionId) {
+    if (!job || !canAccessJob(job, req)) {
       return apiError(reply, 404, 'NOT_FOUND', '잡을 찾을 수 없습니다.');
     }
     const output =
@@ -102,7 +107,7 @@ export function registerJobRoutes(app: FastifyInstance, deps: AppDeps): void {
   // 상태 스트림 (SSE, F-40)
   app.get<{ Params: { id: string } }>('/api/v1/jobs/:id/events', async (req, reply) => {
     const job = await repos.jobs.find(req.params.id);
-    if (!job || job.sessionId !== req.sessionId) {
+    if (!job || !canAccessJob(job, req)) {
       return apiError(reply, 404, 'NOT_FOUND', '잡을 찾을 수 없습니다.');
     }
 
@@ -175,7 +180,7 @@ export function registerJobRoutes(app: FastifyInstance, deps: AppDeps): void {
   // 다운로드 URL 발급 (F-30)
   app.post<{ Params: { id: string } }>('/api/v1/jobs/:id/download-url', async (req, reply) => {
     const job = await repos.jobs.find(req.params.id);
-    if (!job || job.sessionId !== req.sessionId) {
+    if (!job || !canAccessJob(job, req)) {
       return apiError(reply, 404, 'NOT_FOUND', '잡을 찾을 수 없습니다.');
     }
     if (job.status !== 'DONE') {

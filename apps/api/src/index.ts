@@ -1,7 +1,7 @@
 import { createPgRepos, createPool, defaultMigrationsDir, migrate } from '@shorts/db';
 import { loadBgmCatalog, loadPresetCatalog } from '@shorts/media';
 import { BullStageQueue } from '@shorts/queue';
-import { LocalFsStorage } from '@shorts/storage';
+import { storageFromEnv } from '@shorts/storage';
 import IORedis from 'ioredis';
 import { scheduleCleanup } from './cleanup.js';
 import { FileTokenSigner } from './lib/signer.js';
@@ -10,7 +10,6 @@ import { buildServer } from './server.js';
 const PORT = Number(process.env.PORT ?? 3000);
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://shorts:shorts@localhost:5432/shorts';
-const STORAGE_ROOT = process.env.STORAGE_ROOT ?? './storage-data';
 const FILE_TOKEN_SECRET = process.env.FILE_TOKEN_SECRET ?? '';
 const PRESETS_DIR = process.env.PRESETS_DIR ?? './config/presets';
 const BGM_CATALOG = process.env.BGM_CATALOG ?? './assets/bgm/catalog.json';
@@ -48,7 +47,7 @@ async function main(): Promise<void> {
 
   const queue = new BullStageQueue(REDIS_URL);
   const repos = createPgRepos(pool);
-  const storage = new LocalFsStorage(STORAGE_ROOT);
+  const storage = storageFromEnv();
 
   const app = await buildServer({
     repos,

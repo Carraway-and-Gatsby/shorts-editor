@@ -14,6 +14,7 @@ import {
 import { selectBgm, type BgmTrackDef } from './bgm.js';
 import { selectHighlights } from './highlight.js';
 import { resolvePreset, type PresetDef } from './presets.js';
+import { maskSubtitleBlocks } from './profanity.js';
 import { buildReframe } from './reframe.js';
 import type { ScoringConfig } from './scoring.js';
 import { buildSubtitles } from './subtitles.js';
@@ -28,10 +29,12 @@ export interface BuildCompositionInput {
   scoring?: ScoringConfig;
   presets?: Record<string, PresetDef>;
   bgmCatalog?: BgmTrackDef[];
+  /** 금칙어 목록 (profanityMask=on일 때 적용) */
+  bannedWords?: string[];
 }
 
 /** 타이틀 카드 문구 (F-16): STT 첫 문장을 잘라 사용 */
-function titleCardText(analysis: AnalysisDoc): string | null {
+export function titleCardText(analysis: AnalysisDoc): string | null {
   const first = analysis.transcript?.segments[0]?.text?.trim();
   if (!first) {
     return null;
@@ -52,6 +55,9 @@ export function buildCompositionFromAnalysis(input: BuildCompositionInput): Comp
     options.preset,
     options.subtitle === 'on',
   );
+  if (options.profanityMask === 'on') {
+    subtitles.blocks = maskSubtitleBlocks(subtitles.blocks, input.bannedWords ?? []);
+  }
   const bgm = selectBgm(options.bgm, preset, analysis, input.bgmCatalog ?? []);
 
   const composition: Composition = {

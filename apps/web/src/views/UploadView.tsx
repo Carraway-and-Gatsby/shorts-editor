@@ -24,6 +24,7 @@ export function UploadView({ onJobCreated, onError }: Props) {
   const [preset, setPreset] = useState('clean');
   const [subtitle, setSubtitle] = useState(true);
   const [bgm, setBgm] = useState('auto');
+  const [maskProfanity, setMaskProfanity] = useState(false);
   const [uploading, setUploading] = useState<number | null>(null);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export function UploadView({ onJobCreated, onError }: Props) {
         preset,
         subtitle: subtitle ? 'on' : 'off',
         bgm,
+        profanityMask: maskProfanity ? 'on' : 'off',
       };
       const { jobId } = await completeUpload(session.uploadId, options);
       onJobCreated(jobId);
@@ -112,6 +114,14 @@ export function UploadView({ onJobCreated, onError }: Props) {
                 </option>
               ))}
             </select>
+          </label>
+          <label title="자막에서 금칙어를 가립니다 (F-14-R3)">
+            <input
+              type="checkbox"
+              checked={maskProfanity}
+              onChange={(e) => setMaskProfanity(e.target.checked)}
+            />{' '}
+            금칙어 마스킹
           </label>
         </div>
       </Panel>

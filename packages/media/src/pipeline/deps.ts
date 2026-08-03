@@ -28,4 +28,6 @@ export interface PipelineDeps {
   bgmCatalog?: BgmTrackDef[];
   /** BGM 트랙 파일 디렉터리 (렌더 워커용, 기본 ./assets/bgm) */
   bgmDir?: string;
+  /** 금칙어 목록 (F-14-R3) */
+  bannedWords?: string[];
 }

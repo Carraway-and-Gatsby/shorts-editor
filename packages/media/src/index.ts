@@ -12,6 +12,7 @@ export * from './compose/compose.js';
 export * from './compose/presets.js';
 export * from './compose/bgm.js';
 export * from './compose/edit.js';
+export * from './compose/profanity.js';
 export * from './catalogs.js';
 export * from './pipeline/deps.js';
 export * from './pipeline/ingest.js';

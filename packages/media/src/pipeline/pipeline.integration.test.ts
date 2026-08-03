@@ -220,7 +220,7 @@ describe.skipIf(!hasFfmpeg)('pipeline integration (ffmpeg)', () => {
     const patched = applyCompositionPatch(
       composition!,
       { cuts: [{ id: 'c1', sourceStart: 5, sourceEnd: 13, transition: 'cut' }] },
-      analysis.transcript,
+      { analysis },
     );
     expect(patched.ok).toBe(true);
     if (!patched.ok) {

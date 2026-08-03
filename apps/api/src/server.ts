@@ -3,6 +3,7 @@ import { newId } from '@shorts/db';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AppDeps } from './deps.js';
 import { CHUNK_SIZE } from './lib/upload-rules.js';
+import { registerAuthRoutes } from './routes/auth.js';
 import { registerCatalogRoutes } from './routes/catalogs.js';
 import { registerCompositionRoutes } from './routes/compositions.js';
 import { registerFileRoutes } from './routes/files.js';
@@ -25,19 +26,25 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
     (_req, body, done) => done(null, body),
   );
 
-  // 익명 세션 (MVP: F-42는 익명+세션 쿠키)
+  // 익명 세션 쿠키 + 로그인 상태 식별 (F-42)
   app.decorateRequest('sessionId', '');
+  app.decorateRequest('userId', null);
   app.addHook('onRequest', async (req, reply) => {
     if (req.url === '/healthz' || req.url.startsWith('/api/v1/healthz')) {
       return;
     }
     const sid = req.cookies[SESSION_COOKIE];
-    if (sid && (await deps.repos.sessions.find(sid))) {
-      req.sessionId = sid;
-      return;
+    if (sid) {
+      const session = await deps.repos.sessions.find(sid);
+      if (session) {
+        req.sessionId = session.id;
+        req.userId = session.userId;
+        return;
+      }
     }
     const session = await deps.repos.sessions.create(newId('ses'));
     req.sessionId = session.id;
+    req.userId = null;
     reply.setCookie(SESSION_COOKIE, session.id, {
       path: '/',
       httpOnly: true,
@@ -69,6 +76,7 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
     });
   }
 
+  registerAuthRoutes(app, deps);
   registerUploadRoutes(app, deps);
   registerJobRoutes(app, deps);
   registerCompositionRoutes(app, deps);

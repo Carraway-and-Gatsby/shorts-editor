@@ -1,17 +1,20 @@
 """Analyze 단계 오케스트레이션: 프록시/오디오 → analysis.json (AnalysisDoc).
 
 packages/shared/src/analysis.ts의 스키마와 동일한 구조를 생성한다.
+스토리지 드라이버(local/S3)를 통해 산출물을 읽고 쓴다.
 """
 
 import json
 import logging
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
 from . import audio as audio_mod
 from . import stt as stt_mod
 from . import visual as visual_mod
-from .paths import analysis_path, audio_path, proxy_path
+from .keys import analysis_key, audio_key, proxy_key
+from .storage import storage_from_env
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +26,7 @@ def analyze_job(
     language: str = "auto",
     progress: ProgressFn | None = None,
     transcriber=stt_mod.transcribe,
+    storage=None,
 ) -> dict:
     """분석을 수행하고 AnalysisDoc(dict)을 반환한다.
 
@@ -30,38 +34,42 @@ def analyze_job(
     - STT 실패는 warnings에 기록하고 진행한다.
     """
     report = progress or (lambda _p: None)
+    store = storage or storage_from_env()
     warnings: list[str] = []
 
-    proxy = proxy_path(job_id)
-    if not proxy.exists():
-        raise FileNotFoundError(f"proxy not found: {proxy}")
+    if not store.exists(proxy_key(job_id)):
+        raise FileNotFoundError(f"proxy not found: {proxy_key(job_id)}")
 
-    report(15)
-    source, shots = visual_mod.analyze_visual(proxy)
-    report(30)
+    with tempfile.TemporaryDirectory(prefix="shorts-analyze-") as tmp:
+        tmp_dir = Path(tmp)
+        proxy = store.fetch_to(proxy_key(job_id), tmp_dir / "proxy.mp4")
 
-    audio_file = audio_path(job_id)
-    has_audio = audio_file.exists()
-    energy: list[dict] = []
-    silences: list[dict] = []
-    transcript: dict | None = None
-    if has_audio:
-        try:
-            energy = audio_mod.energy_curve(audio_file)
-            silences = audio_mod.detect_silences(audio_file)
-        except Exception as err:
-            log.warning("audio analysis failed: %s", err)
-            warnings.append("audio_analysis_failed")
-        report(35)
-        transcript = transcriber(audio_file, language)
-        if transcript is None:
-            warnings.append("stt_failed")
-        elif not transcript["segments"]:
-            transcript = None
-            warnings.append("stt_no_speech")
-    else:
-        warnings.append("stt_skipped_no_audio")
-    report(44)
+        report(15)
+        source, shots = visual_mod.analyze_visual(proxy)
+        report(30)
+
+        has_audio = store.exists(audio_key(job_id))
+        energy: list[dict] = []
+        silences: list[dict] = []
+        transcript: dict | None = None
+        if has_audio:
+            audio_file = store.fetch_to(audio_key(job_id), tmp_dir / "audio.wav")
+            try:
+                energy = audio_mod.energy_curve(audio_file)
+                silences = audio_mod.detect_silences(audio_file)
+            except Exception as err:
+                log.warning("audio analysis failed: %s", err)
+                warnings.append("audio_analysis_failed")
+            report(35)
+            transcript = transcriber(audio_file, language)
+            if transcript is None:
+                warnings.append("stt_failed")
+            elif not transcript["segments"]:
+                transcript = None
+                warnings.append("stt_no_speech")
+        else:
+            warnings.append("stt_skipped_no_audio")
+        report(44)
 
     return {
         "version": 1,
@@ -89,8 +97,8 @@ def analyze_job(
     }
 
 
-def write_analysis(job_id: str, doc: dict) -> Path:
-    path = analysis_path(job_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, ensure_ascii=False))
-    return path
+def write_analysis(job_id: str, doc: dict, storage=None) -> str:
+    store = storage or storage_from_env()
+    key = analysis_key(job_id)
+    store.put_text(key, json.dumps(doc, ensure_ascii=False))
+    return key

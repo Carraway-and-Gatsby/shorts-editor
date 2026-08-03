@@ -64,6 +64,9 @@ services:
       timeout: 5s
       retries: 5
 
+  # 스케일아웃: docker compose up --scale worker-render=3 --scale worker-ingest=2
+  # (워커는 무상태이며 호스트 포트를 점유하지 않는다. S3 스토리지 사용 시
+  #  STORAGE_DRIVER=s3 + S3_* 환경 변수를 각 서비스에 지정한다.)
   worker-ingest:
     build:
       context: .
@@ -72,6 +75,7 @@ services:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgres://shorts:shorts@postgres:5432/shorts
       STORAGE_ROOT: /data/storage
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
       HEALTH_PORT: 8081
     volumes:
       - storage:/data/storage
@@ -95,6 +99,7 @@ services:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgres://shorts:shorts@postgres:5432/shorts
       STORAGE_ROOT: /data/storage
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
       HEALTH_PORT: 8082
     volumes:
       - storage:/data/storage

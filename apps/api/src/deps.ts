@@ -20,5 +20,7 @@ export interface AppDeps {
 declare module 'fastify' {
   interface FastifyRequest {
     sessionId: string;
+    /** 로그인된 사용자 (익명이면 null) */
+    userId: string | null;
   }
 }

@@ -2,6 +2,15 @@ import type { Composition, JobStage, JobStatus } from '@shorts/shared';
 
 export interface SessionRow {
   id: string;
+  /** 로그인된 계정 (익명이면 null) */
+  userId: string | null;
+  createdAt: Date;
+}
+
+export interface UserRow {
+  id: string;
+  email: string;
+  passwordHash: string;
   createdAt: Date;
 }
 
@@ -27,6 +36,8 @@ export interface JobOptions {
   bgm: 'auto' | 'off' | string;
   reframe: 'track' | 'pad' | 'auto';
   language: string;
+  /** 금칙어 마스킹 (F-14-R3, 기본 off) */
+  profanityMask?: 'on' | 'off';
 }
 
 /** Ingest 단계에서 기록하는 원본 메타데이터 (표시 방향 기준) */
@@ -42,6 +53,8 @@ export interface SourceMeta {
 export interface JobRow {
   id: string;
   sessionId: string;
+  /** 계정 귀속 (익명 잡은 null) */
+  userId: string | null;
   status: JobStatus;
   stage: JobStage | null;
   progress: number;
@@ -72,6 +85,14 @@ export interface SessionsRepo {
   /** id의 세션이 있으면 갱신, 없으면 null */
   find(id: string): Promise<SessionRow | null>;
   create(id: string): Promise<SessionRow>;
+  /** 세션을 계정에 연결 (null이면 로그아웃) */
+  attachUser(id: string, userId: string | null): Promise<void>;
+}
+
+export interface UsersRepo {
+  create(input: { id: string; email: string; passwordHash: string }): Promise<UserRow>;
+  findByEmail(email: string): Promise<UserRow | null>;
+  findById(id: string): Promise<UserRow | null>;
 }
 
 export interface UploadsRepo {
@@ -91,9 +112,16 @@ export interface UploadsRepo {
 export interface CreateJobInput {
   id: string;
   sessionId: string;
+  userId?: string | null;
   options: JobOptions;
   sourceExt: string;
   expiresAt: Date;
+}
+
+/** 이력 조회 주체: 로그인 시 계정 전체, 익명이면 현재 세션 */
+export interface JobOwner {
+  sessionId: string;
+  userId: string | null;
 }
 
 export interface JobListPage {
@@ -111,8 +139,10 @@ export interface SttCorrectionInput {
 export interface JobsRepo {
   create(input: CreateJobInput): Promise<JobRow>;
   find(id: string): Promise<JobRow | null>;
-  /** 세션의 잡 목록 (최신순, 커서 페이지네이션) */
-  listBySession(sessionId: string, limit: number, cursor?: string): Promise<JobListPage>;
+  /** 소유자의 잡 목록 (최신순, 커서 페이지네이션) */
+  listByOwner(owner: JobOwner, limit: number, cursor?: string): Promise<JobListPage>;
+  /** 익명 이력 병합 (F-42): 세션의 무소속 잡을 계정에 귀속시킨다 */
+  mergeSessionToUser(sessionId: string, userId: string): Promise<number>;
   /**
    * 낙관적 상태 전이. 현재 상태가 from일 때만 to로 바꾼다.
    * @returns 전이 성공 여부
@@ -153,6 +183,7 @@ export interface CorrectionsRepo {
 
 export interface Repos {
   sessions: SessionsRepo;
+  users: UsersRepo;
   uploads: UploadsRepo;
   jobs: JobsRepo;
   corrections: CorrectionsRepo;

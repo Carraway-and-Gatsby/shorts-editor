@@ -17,6 +17,10 @@ describe('maskProfanity', () => {
   it('leaves clean text untouched', () => {
     expect(maskProfanity('안녕하세요 좋은 영상입니다', WORDS)).toBe('안녕하세요 좋은 영상입니다');
   });
+
+  it('fully masks single-character banned words', () => {
+    expect(maskProfanity('아 좆 같네', ['좆'])).toBe('아 * 같네');
+  });
 });
 
 describe('maskSubtitleBlocks', () => {

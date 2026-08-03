@@ -60,6 +60,55 @@ docker compose up --build
 | 웹 UI | http://localhost:8080 |
 | API | http://localhost:3000 (헬스체크: `/healthz`) |
 
+### Docker 없이 실행하기
+
+Docker를 쓸 수 없는 환경에서 전체 스택을 직접 실행하는 방법입니다.
+
+**전제 조건**: Node.js ≥ 20 + pnpm 10, Python ≥ 3.11, ffmpeg, Redis, PostgreSQL
+
+```bash
+# Ubuntu/Debian 기준 시스템 패키지
+sudo apt install ffmpeg redis-server postgresql fonts-noto-cjk
+```
+
+> `fonts-noto-cjk`는 자막 번인(한글 폰트)에 필요합니다.
+
+```bash
+# 1) 인프라: Redis + PostgreSQL 사용자/DB 생성
+redis-server --daemonize yes
+sudo -u postgres psql -c "CREATE USER shorts WITH PASSWORD 'shorts';" \
+                      -c "CREATE DATABASE shorts OWNER shorts;"
+
+# 2) 빌드
+pnpm install && pnpm build
+
+# 3) 분석 워커(Python) 설치 — STT까지 쓰려면 [stt] 포함
+python3 -m venv .venv
+.venv/bin/pip install './workers/analyze[stt]'
+
+# 4) 환경 변수 (모든 프로세스 공통, 저장소 루트에서 실행할 것)
+export REDIS_URL=redis://localhost:6379
+export DATABASE_URL=postgres://shorts:shorts@localhost:5432/shorts
+export STORAGE_ROOT=./storage-data
+export FILE_TOKEN_SECRET=$(openssl rand -hex 16)
+export WHISPER_MODEL=base WHISPER_CACHE=./models   # STT 모델 (첫 실행 시 다운로드)
+
+# 5) 서비스 실행 (터미널 4개 또는 백그라운드로)
+node apps/api/dist/index.js &            # :3000 — 첫 실행 시 마이그레이션 자동 적용
+node workers/ingest/dist/index.js &      # ingest + compose 큐 소비
+node workers/render/dist/index.js &      # render 큐 소비 (ffmpeg 필요)
+.venv/bin/python -m analyze_worker &     # analyze 큐 소비
+
+# 6) 웹 UI
+pnpm --filter @shorts/web dev            # http://localhost:5173 (API 프록시 내장)
+# 프로덕션 번들로 확인하려면: pnpm --filter @shorts/web preview
+```
+
+동작 확인: `curl localhost:3000/healthz` 와 워커 헬스 포트(8081/8082/8083)가 모두
+`"status":"ok"`를 반환하면 준비 완료입니다. 워커는 `config/`·`assets/`를 상대 경로로
+읽으므로 **반드시 저장소 루트에서** 실행하세요. STT 모델을 내려받을 수 없는 네트워크에서는
+자막 없이 자동 진행됩니다(`stt_failed` 경고).
+
 ### 로컬 개발
 
 ```bash

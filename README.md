@@ -5,6 +5,27 @@
 - 입력: 사용자가 첨부한 짧은 영상(가로/세로 무관, 수 초 ~ 수 분)
 - 출력: YouTube Shorts / Instagram Reels / TikTok 규격(9:16, 최대 60초 내외)에 맞춘 완성형 숏폼 영상
 
+## 데모
+
+가로 원본을 업로드하면 하이라이트 컷 선택 → 피사체 추적 크롭 → 자막 번인 → BGM 믹싱을 거쳐
+세로 숏폼이 나옵니다. (아래는 합성 데모 클립을 실제 파이프라인으로 처리한 결과입니다)
+
+![원본과 완성본 비교](docs/images/demo-before-after.png)
+
+### 스크린샷
+
+| 업로드 · 생성 옵션 | 생성 진행 (SSE) |
+|---|---|
+| ![업로드 화면](docs/images/screenshot-upload.png) | ![진행 화면](docs/images/screenshot-processing.png) |
+
+**결과 확인과 보정** — 미리보기, 컷 타임라인(발화 구간 표시), 자막 편집, 스타일 교체, 리비전 재렌더링:
+
+![편집 화면](docs/images/screenshot-editor.png)
+
+| 작업 이력 |
+|---|
+| ![이력 화면](docs/images/screenshot-history.png) |
+
 ## 프로젝트 상태
 
 **핵심 기능 구현 완료 (v2)** — 계획했던 기능 범위(M0~M4)가 모두 구현되었습니다.

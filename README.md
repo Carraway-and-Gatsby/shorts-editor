@@ -14,17 +14,22 @@
 
 ### 스크린샷
 
-| 업로드 · 생성 옵션 | 생성 진행 (SSE) |
-|---|---|
-| ![업로드 화면](docs/images/screenshot-upload.png) | ![진행 화면](docs/images/screenshot-processing.png) |
+**업로드 · 생성 옵션** — 길이, 스타일 프리셋, 자동 자막, BGM, 금칙어 마스킹을 고르고 영상을 올립니다.
 
-**결과 확인과 보정** — 미리보기, 컷 타임라인(발화 구간 표시), 자막 편집, 스타일 교체, 리비전 재렌더링:
+<img src="docs/images/screenshot-upload.png" width="620" alt="업로드 화면">
 
-![편집 화면](docs/images/screenshot-editor.png)
+**생성 진행** — 검증 → 분석 → 편집 구성 → 렌더링 단계가 SSE로 실시간 표시됩니다.
 
-| 작업 이력 |
-|---|
-| ![이력 화면](docs/images/screenshot-history.png) |
+<img src="docs/images/screenshot-processing.png" width="620" alt="진행 화면">
+
+**결과 확인과 보정** — 미리보기, 컷 타임라인(파란 블록이 선택된 컷, 초록 막대가 발화 구간),
+자막 편집, 스타일 교체, 리비전 재렌더링을 한 화면에서 처리합니다.
+
+<img src="docs/images/screenshot-editor.png" width="560" alt="편집 화면">
+
+**작업 이력** — 만든 숏폼을 다시 열어 보정·재렌더링할 수 있습니다.
+
+<img src="docs/images/screenshot-history.png" width="620" alt="이력 화면">
 
 ## 프로젝트 상태
 

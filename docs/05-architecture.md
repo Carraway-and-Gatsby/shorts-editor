@@ -8,32 +8,29 @@
 
 ## 5.2 구성 요소
 
-```
-┌──────────────┐        ┌───────────────────────────────────────────┐
-│   Web App    │  HTTP  │                API Server                 │
-│ (React SPA)  │◀──────▶│  업로드 세션, 잡 CRUD, 상태 조회(SSE),      │
-│              │        │  컴포지션 편집, 다운로드 URL 발급            │
-└──────────────┘        └──────┬────────────────────────┬───────────┘
-                               │ enqueue                │ read/write
-                               ▼                        ▼
-                        ┌────────────┐          ┌──────────────┐
-                        │ Job Queue  │          │   Database   │
-                        │ (Redis)    │          │ (PostgreSQL) │
-                        └─────┬──────┘          └──────────────┘
-                              │ consume
-              ┌───────────────┼───────────────────┐
-              ▼               ▼                   ▼
-      ┌──────────────┐ ┌──────────────┐   ┌──────────────┐
-      │ Ingest Worker│ │Analyze Worker│   │ Render Worker│
-      │ (ffmpeg)     │ │(CV + STT)    │   │ (ffmpeg)     │
-      └──────┬───────┘ └──────┬───────┘   └──────┬───────┘
-             │                │                  │
-             └────────────────┼──────────────────┘
-                              ▼
-                     ┌─────────────────┐
-                     │  Object Storage │
-                     │ (로컬 FS / S3)  │
-                     └─────────────────┘
+```mermaid
+flowchart TB
+    Web["<b>Web App</b><br/>React SPA"]
+    API["<b>API Server</b><br/>업로드 세션 · 잡 CRUD<br/>상태 조회(SSE) · 컴포지션 편집<br/>다운로드 URL 발급"]
+    Queue["<b>Job Queue</b><br/>Redis + BullMQ"]
+    DB[("<b>Database</b><br/>PostgreSQL")]
+    Ingest["<b>Ingest Worker</b><br/>ffmpeg"]
+    Analyze["<b>Analyze Worker</b><br/>CV + STT (Python)"]
+    Render["<b>Render Worker</b><br/>ffmpeg"]
+    Storage[("<b>Object Storage</b><br/>로컬 FS / S3")]
+
+    Web <-->|HTTP| API
+    API -->|enqueue| Queue
+    API -->|read / write| DB
+    Queue -->|consume| Ingest
+    Queue -->|consume| Analyze
+    Queue -->|consume| Render
+    Ingest --> Storage
+    Analyze --> Storage
+    Render --> Storage
+    Ingest -.-> DB
+    Analyze -.-> DB
+    Render -.-> DB
 ```
 
 | 구성 요소 | 역할 | 기술 선택 (MVP) |

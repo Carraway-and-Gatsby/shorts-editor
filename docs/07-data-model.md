@@ -87,16 +87,36 @@ Preset, BgmTrack : 전역 카탈로그 (잡과 N:1 참조)
 
 ## 7.3 잡 상태 머신
 
-```
-                     ┌─────────────────────────────────────────┐
-                     │                (실패는 어느 단계에서든)  │
-                     ▼                                         │
-UPLOADING ─▶ QUEUED ─▶ ANALYZING ─▶ COMPOSING ─▶ RENDERING ─▶ DONE
-    │           │          │            │            │          │
-    │           └──────────┴────────────┴────────────┴──▶ FAILED│
-    └─────────────────────────▶ CANCELED ◀──────────────────────┘
-                            (DONE 이후엔 취소 불가,             (재렌더 시
-                             삭제만 가능)                        RENDERING으로 복귀)
+```mermaid
+stateDiagram-v2
+    [*] --> UPLOADING
+    UPLOADING --> QUEUED: 업로드 완료
+    QUEUED --> ANALYZING: Ingest 시작
+    ANALYZING --> COMPOSING: 분석 완료
+    COMPOSING --> RENDERING: 컴포지션 산출
+    RENDERING --> DONE: 렌더 완료
+    DONE --> RENDERING: 재렌더링 (F-24)
+
+    UPLOADING --> CANCELED: 사용자 취소
+    QUEUED --> CANCELED
+    ANALYZING --> CANCELED
+    COMPOSING --> CANCELED
+    RENDERING --> CANCELED
+
+    UPLOADING --> FAILED: 각 단계 실패
+    QUEUED --> FAILED
+    ANALYZING --> FAILED
+    COMPOSING --> FAILED
+    RENDERING --> FAILED
+
+    DONE --> [*]
+    FAILED --> [*]
+    CANCELED --> [*]
+
+    note right of DONE
+        DONE 이후엔 취소 불가 (삭제만 가능)
+        재렌더 시 RENDERING으로 복귀
+    end note
 ```
 
 | 상태 | 의미 | 진입 조건 |
